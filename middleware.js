@@ -9,28 +9,22 @@
  * 4. If the code is correct, it allows the user to see the page.
  * 5. If the code is incorrect or missing, it blocks the request with an "Access Denied" message.
  */
-import { NextResponse } from "next/server";
-
-export function middleware(req) {
-  console.log(`[Middleware] Running for path: ${req.url}`);
+export default function middleware(request) {
+  console.log(`[Middleware] Running for path: ${request.url}`);
 
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
-    return new NextResponse("Access code not configured on server.", { status: 500 });
+    return new Response("Access code not configured on server.", { status: 500 });
   }
 
-  const url = new URL(req.url);
+  const url = new URL(request.url);
   const providedCode = url.searchParams.get("access_code");
 
   if (providedCode === accessCode) {
     console.log("[Middleware] Access code matched. Allowing request.");
-    return NextResponse.next(); // ✅ must explicitly return
+    return; // ✅ allow request to continue
   }
 
   console.log("[Middleware] Access code missing or incorrect. Denying access.");
-  return new NextResponse("Access Denied", { status: 401 });
+  return new Response("Access Denied", { status: 401 });
 }
-
-export const config = {
-  matcher: "/((?!api|_next|favicon.ico).*)"
-};
