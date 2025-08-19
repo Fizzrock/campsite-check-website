@@ -1,59 +1,44 @@
 /**
  * =================================================================================================
  * RECREATION.GOV CAMPSITE AVAILABILITY CHECKER
- * Version: 1.2.0
+ * Version: 2.0.0
  * =================================================================================================
  *
  * Description:
- * This script provides a comprehensive tool for checking campsite availability at a specific
- * campground on Recreation.gov. It fetches data from multiple public APIs, processes it,
- * and presents it in a user-friendly format on a main web page and in several specialized new tabs.
+ * An interactive web application for checking campsite availability on Recreation.gov.
+ * This tool provides a user interface to dynamically configure searches, fetches data
+ * securely through a server-side proxy, and presents the results in a detailed,
+ * user-friendly format on a main web page and in several specialized new tabs.
  *
  * Code Structure:
- * The script is organized into a clean, modular structure following a "prepare, fetch, render" pattern.
- * - `config`: A single object at the top of the file holds all user-configurable settings, driven by presets.
- * - `prepareConfig()`: Calculates effective dates for the API calls and filters.
- * - `fetchAllData()`: Orchestrates all concurrent API requests and combines the results.
- * - `renderAllOutputs()`: Takes the fetched data and generates all visual output (main page and tabs).
- * - `runAvailabilityCheck()`: The main entry point that calls the above functions in sequence.
- * - Utility Functions: Includes generic helpers for API fetching (`fetchApiData`) and tab rendering
- *   (`renderTabularDataInNewTab`) to reduce code duplication and improve maintainability.
+ * The project is structured as a modern web application with a clear separation of concerns:
+ * - `index.html`: Contains the HTML structure for the user interface form.
+ * - `style.css`: Provides styling for the application.
+ * - `campgroundAvailability.js`: The main frontend script containing all client-side logic.
+ *   - UI Initialization (`initializePage`): Sets up the form, populates presets, and attaches event listeners.
+ *   - Dynamic Configuration (`buildConfigFromForm`): Builds the search configuration from the UI on demand.
+ *   - Core Logic (`runAvailabilityCheck`): The main entry point that orchestrates the data fetching and rendering.
+ * - `api/fetch-ridb.js`: A Vercel serverless function that acts as a secure proxy for all external API calls.
+ * - `middleware.js`: Vercel Edge Middleware that provides password protection for the entire site.
+ * - `presets.json`: An external file for managing campground presets, loaded dynamically by the application.
  *
  * Key Features:
- * - Fetches monthly availability data for a specified campground ID.
- * - Fetches detailed metadata for the campground to find its corresponding RIDB Facility ID and
- *   parent Recreation Area ID.
- * - Uses the RIDB (Recreation Information Database) API to get rich details about the facility,
- *   its parent recreation area, and specific campsites.
- * - Displays a main page with:
- *   - Detailed campground information (description, directions, contact, etc.).
- *   - Details about the parent Recreation Area.
- *   - A gallery of images for the facility and RecArea.
- *   - A list of upcoming events in the RecArea.
- *   - A summary of availability statuses (e.g., "Available", "Reserved") for a given date range.
- *   - A full, sortable data table of all availabilities for the fetched period.
- * - Opens new browser tabs for specialized views, such as:
- *   - Raw JSON data from the availability API.
- *   - A list of only "Available" (and optionally "Not Reservable") sites.
- *   - A filtered list of specific campsites of interest, with their detailed information.
- *   - The "Filtered Sites" tab now includes a top-level summary of which of those sites are available.
- * - Highly configurable via a central `config` object and presets to control which tabs are shown,
- *   the date ranges, sites to filter, and more.
+ * - Interactive UI: Dynamically configure searches using a web form instead of editing code.
+ * - External Presets: Manage favorite campgrounds and site lists in an easy-to-edit `presets.json` file.
+ * - Shareable Searches: Generate and copy bookmarkable URLs that contain your exact search configuration.
+ * - Secure API Handling: All API calls are routed through a server-side proxy, keeping your API key safe.
+ * - Comprehensive Data Display: Presents detailed information about campgrounds, recreation areas, events,
+ *   and media in a clean, organized main page view.
+ * - Specialized Output Tabs: Generates separate, focused tabs for available sites, filtered sites,
+ *   and raw data for in-depth analysis.
+ * - Site Detail Fetching: Can fetch and display rich details, including photos and attributes, for specific
+ *   campsites of interest.
+ * - Password Protection: The live deployment is protected by a simple but effective access code via middleware.
  *
  * APIs Used:
  * - Recreation.gov Availability API: `https://www.recreation.gov/api/camps/availability/campground/...`
  * - Recreation.gov Metadata API: `https://www.recreation.gov/api/camps/campgrounds/...`
  * - RIDB API: `https://ridb.recreation.gov/api/v1/...` (Requires an API key)
- *
- * Setup & Usage:
- * 1. **Configure Presets**: Edit the `preset_...` and `datePreset_...` objects to define your favorite
- *    campgrounds, site lists, and date ranges.
- * 2. **Select Active Preset**: Change the `activePreset` and `activeDatePreset` constants to select which
- *    configuration to run.
- * 3. **Add API Key**: Crucially, you must replace the placeholder `RIDB_API_KEY` in the `config` object
- *    with your own valid key from Recreation.gov to fetch detailed information.
- * 4. **Run in Browser**: Open `index.html` in a browser. The easiest way is with the "Live Server"
- *    extension in VS Code (see details below).
  *
  * Relationship with `run-and-save-debug.js`:
  * This script is designed to be run in a browser, but it can also be automated for
@@ -133,7 +118,12 @@
  */
 
 // --- Configuration Presets ---
-// Define your favorite campgrounds and site filters here. To use one, assign it to `activePreset` below.
+/*
+ * NOTE ON PRESET LOGIC:
+ * Presets for the UI dropdown are now managed in the external `presets.json` file.
+ * The hardcoded presets below, along with `activePreset`, are now only used to provide the
+ * *initial default values* for the form when the page is loaded without any URL parameters.
+ */
 const preset_TuolumneMeadows = {
     campgroundId: "232448",
     sites: ['A040', 'A042', 'A044', 'A043', 'A038', 'A037', 'A034', 'A035', 'A033', 'A032', 'A028', 'A022', 'A020']
@@ -203,11 +193,21 @@ const datePreset_specificMonth = {
 };
 
 // --- Active Configuration ---
-// To change the campground, simply change the preset assigned here.
+/*
+ * NOTE ON ACTIVE CONFIGURATION:
+ * The `activePreset` and `activeDatePreset` constants below now only define the
+ * *initial default state* of the form when the page first loads. All subsequent
+ * checks are driven by the values currently in the form fields.
+ */
 const activePreset = preset_TuolumneMeadows;
-// To change the date range, change the date preset assigned here.
 const activeDatePreset = datePreset_dynamic30Days;
 
+/*
+ * NOTE ON THE `config` OBJECT:
+ * This object is constructed from the `activePreset` and `activeDatePreset` constants above.
+ * It serves as the *default configuration* when the page is loaded without any URL parameters.
+ * When a user runs a new check, a new configuration is built dynamically from the form fields.
+ */
 const config = {
     // --- API & Campground Identification ---
     api: {
