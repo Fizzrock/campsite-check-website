@@ -11,22 +11,26 @@
  */
 import { NextResponse } from "next/server";
 
-export default function middleware(request) {
-  console.log(`[Middleware] Running for path: ${request.url}`);
+export function middleware(req) {
+  console.log(`[Middleware] Running for path: ${req.url}`);
 
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
-    return new Response("Access code not configured on server.", { status: 500 });
+    return new NextResponse("Access code not configured on server.", { status: 500 });
   }
 
-  const url = new URL(request.url);
+  const url = new URL(req.url);
   const providedCode = url.searchParams.get("access_code");
 
   if (providedCode === accessCode) {
     console.log("[Middleware] Access code matched. Allowing request.");
-    return; // ✅ Allow request to continue
+    return NextResponse.next(); // ✅ must explicitly return
   }
 
   console.log("[Middleware] Access code missing or incorrect. Denying access.");
-  return new Response("Access Denied", { status: 401 });
+  return new NextResponse("Access Denied", { status: 401 });
 }
+
+export const config = {
+  matcher: "/((?!api|_next|favicon.ico).*)"
+};
