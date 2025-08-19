@@ -222,6 +222,21 @@ td:nth-child(6) {
 .button-container button:hover {
     opacity: 0.9;
 }
+
+#live-debug-panel {
+    border: 2px dashed #e74c3c;
+    background-color: #fff5f5;
+    padding: 15px;
+    margin-top: 20px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+#live-debug-panel h3 {
+    margin-top: 0;
+}
 .request-info {
     font-size: 0.8em;
     color: #777;

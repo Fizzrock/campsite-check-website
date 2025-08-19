@@ -13,7 +13,7 @@ export default function middleware(request) {
   const url = new URL(request.url);
 
   // Allow static assets
-  if (url.pathname.match(/\.(css|js|png|jpg|jpeg|ico|svg|webp|woff2?)$/)) return;
+  if (url.pathname.match(/\.(css|js|json|png|jpg|jpeg|ico|svg|webp|woff2?)$/)) return;
 
   // Allow API routes
   if (url.pathname.startsWith('/api/')) return;

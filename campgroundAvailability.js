@@ -160,14 +160,8 @@ const preset_UpperPines = {
     sites: [] // No specific sites, will show all
 };
 
-// A collection to make presets easily iterable and referenceable by name.
-const PRESET_COLLECTION = {
-    'Tuolumne Meadows': preset_TuolumneMeadows,
-    'Rock Creek (Patti)': preset_RockCreek_Patti,
-    'Rock Creek (All)': preset_RockCreek_All,
-    'Yosemite Creek': preset_YosemiteCreek,
-    'Upper Pines': preset_UpperPines
-};
+// This will be populated by fetching presets.json on page load.
+let PRESET_COLLECTION = {};
 
 // --- Date Filtering Presets ---
 // These presets define different date ranges for the availability check.
@@ -2577,6 +2571,14 @@ function handleCopyLink() {
     const baseUrl = window.location.origin + window.location.pathname;
     const params = new URLSearchParams();
 
+    // Preserve the access_code from the current URL if it exists, so the
+    // generated link will also be accessible.
+    const currentParams = new URLSearchParams(window.location.search);
+    const accessCode = currentParams.get('access_code');
+    if (accessCode) {
+        params.append('access_code', accessCode);
+    }
+
     // Add main search parameters
     if (dynamicConfig.api.campgroundId) params.append('campgroundId', dynamicConfig.api.campgroundId);
     if (dynamicConfig.filters.filterStartDate) params.append('filterStartDate', dynamicConfig.filters.filterStartDate);
@@ -2604,28 +2606,68 @@ function handleCopyLink() {
  * Initializes the page on load. It sets up the form with values from URL parameters
  * or defaults from the `config` object, and attaches event listeners to the form buttons.
  */
-function initializePage() {
+async function initializePage() {
+    // --- Setup Live Debug Panel ---
+    const debugPanel = document.getElementById('live-debug-panel');
+    if (debugPanel) debugPanel.style.display = 'block';
+    const logDebug = (msg) => {
+        if (!debugPanel) return;
+        const p = document.createElement('p');
+        p.style.margin = '2px 0';
+        p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        debugPanel.appendChild(p);
+    };
+    logDebug("Initializing page...");
+
     const form = document.getElementById('config-form');
     const copyLinkButton = document.getElementById('copy-link-button');
     const presetSelector = document.getElementById('preset-selector');
 
     if (!form || !copyLinkButton || !presetSelector) {
-        console.error("Required form elements not found. Aborting initialization.");
+        const errorMsg = "Required form elements not found. Aborting UI initialization.";
+        logDebug(`ERROR: ${errorMsg}`);
+        console.error(errorMsg);
         return;
     }
 
-    // Populate the preset dropdown
-    const defaultOption = document.createElement('option');
-    defaultOption.value = "";
-    defaultOption.textContent = "Select a Preset...";
-    presetSelector.appendChild(defaultOption);
+    // --- Fetch and Populate Presets ---
+    try {
+        logDebug("Attempting to fetch 'presets.json'...");
+        const response = await fetch('presets.json');
+        logDebug(`Fetch response status: ${response.status} ${response.statusText}`);
+        logDebug(`Response OK: ${response.ok}`);
 
-    for (const presetName in PRESET_COLLECTION) {
-        const option = document.createElement('option');
-        option.value = presetName;
-        option.textContent = presetName;
-        presetSelector.appendChild(option);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        logDebug("Response OK. Attempting to parse JSON...");
+        PRESET_COLLECTION = await response.json();
+        logDebug("Successfully parsed JSON. Populating preset dropdown...");
+
+        // Populate the preset dropdown from the fetched data
+        const defaultOption = document.createElement('option');
+        defaultOption.value = "";
+        defaultOption.textContent = "Select a Preset...";
+        presetSelector.appendChild(defaultOption);
+
+        for (const presetName in PRESET_COLLECTION) {
+            const option = document.createElement('option');
+            option.value = presetName;
+            option.textContent = presetName;
+            presetSelector.appendChild(option);
+        }
+        logDebug(`Dropdown populated with ${Object.keys(PRESET_COLLECTION).length} presets.`);
+    } catch (error) {
+        const errorMsg = `Could not load or parse presets.json: ${error.message}`;
+        logDebug(`ERROR: ${errorMsg}`);
+        console.error(errorMsg, error);
+        const errorOption = document.createElement('option');
+        errorOption.value = "";
+        errorOption.textContent = "Error loading presets";
+        presetSelector.appendChild(errorOption);
+        presetSelector.disabled = true;
     }
+    logDebug("\n--- Initializing Form from URL/Defaults ---");
 
     // 1. Create initial config from URL params, falling back to the hardcoded defaults
     const urlParams = new URLSearchParams(window.location.search);

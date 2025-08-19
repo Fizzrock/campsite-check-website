@@ -1,0 +1,22 @@
+{
+  "Tuolumne Meadows": {
+    "campgroundId": "232448",
+    "sites": ["A040", "A042", "A044", "A043", "A038", "A037", "A034", "A035", "A033", "A032", "A028", "A022", "A020"]
+  },
+  "Rock Creek (Patti)": {
+    "campgroundId": "233907",
+    "sites": [20, 21, 22, 23, 24]
+  },
+  "Rock Creek (All)": {
+    "campgroundId": "233907",
+    "sites": [1, 12, 20, 21, 22, 23, 24, 25, 26]
+  },
+  "Yosemite Creek": {
+    "campgroundId": "10083840",
+    "sites": [51, 54, 55, 58, 60, 61]
+  },
+  "Upper Pines": {
+    "campgroundId": "232447",
+    "sites": []
+  }
+}
