@@ -9,35 +9,28 @@
  * 4. If the code is correct, it allows the user to see the page.
  * 5. If the code is incorrect or missing, it blocks the request with an "Access Denied" message.
  */
-export function middleware(request) {
-  console.log(`[Middleware] Running for path: ${request.url}`);
+import { NextResponse } from "next/server";
 
-  // Retrieve the secret access code from environment variables.
+export function middleware(req) {
+  console.log(`[Middleware] Running for path: ${req.url}`);
+
   const accessCode = process.env.ACCESS_CODE;
-
-  // If the access code isn't configured on the server, it's a server error.
   if (!accessCode) {
-    return new Response('Access code not configured on server.', { status: 500 });
+    return new NextResponse("Access code not configured on server.", { status: 500 });
   }
 
-  // Use the standard URL API to parse the request URL.
-  const url = new URL(request.url);
-  const providedCode = url.searchParams.get('access_code');
+  const url = new URL(req.url);
+  const providedCode = url.searchParams.get("access_code");
 
-  // If the provided code matches the secret, let the request proceed.
-  // In Vercel Edge Middleware (for non-Next.js projects), returning nothing
-  // allows the request to continue to its destination.
   if (providedCode === accessCode) {
-    console.log('[Middleware] Access code matched. Allowing request.');
-    return;
+    console.log("[Middleware] Access code matched. Allowing request.");
+    return NextResponse.next(); // ✅ must explicitly allow
   }
 
-  // Otherwise, deny access using the standard Response API.
-  console.log('[Middleware] Access code missing or incorrect. Denying access.');
-  return new Response('Access Denied', { status: 401 });
+  console.log("[Middleware] Access code missing or incorrect. Denying access.");
+  return new NextResponse("Access Denied", { status: 401 });
 }
 
-// This config ensures the middleware runs only on page requests, not on your API route.
 export const config = {
-  matcher: '/((?!api/).*)',
+  matcher: "/((?!api|_next|favicon.ico).*)", // ✅ exclude assets so site works
 };
