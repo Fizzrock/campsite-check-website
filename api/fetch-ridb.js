@@ -10,12 +10,45 @@
  * 6. It sends the response from the target API back to the frontend.
  */
 
+const API_ROUTES = {
+    campgroundMetadata: {
+        urlTemplate: (p) => `https://www.recreation.gov/api/camps/campgrounds/${p.campgroundId}`,
+        requiredParams: ['campgroundId'],
+    },
+    availability: {
+        urlTemplate: (p) => `https://www.recreation.gov/api/camps/availability/campground/${p.campgroundId}/month?start_date=${encodeURIComponent(p.start_date)}`,
+        requiredParams: ['campgroundId', 'start_date'],
+    },
+    facilityDetails: {
+        urlTemplate: (p) => `https://ridb.recreation.gov/api/v1/facilities/${p.facilityId}`,
+        requiredParams: ['facilityId'],
+        needsApiKey: true,
+    },
+    recAreaDetails: {
+        urlTemplate: (p) => `https://ridb.recreation.gov/api/v1/recareas/${p.recAreaId}`,
+        requiredParams: ['recAreaId'],
+        needsApiKey: true,
+    },
+    recAreaEvents: {
+        urlTemplate: (p) => `https://ridb.recreation.gov/api/v1/recareas/${p.recAreaId}/events`,
+        requiredParams: ['recAreaId'],
+        needsApiKey: true,
+    },
+    recAreaMedia: {
+        urlTemplate: (p) => `https://ridb.recreation.gov/api/v1/recareas/${p.recAreaId}/media`,
+        requiredParams: ['recAreaId'],
+        needsApiKey: true,
+    },
+    campsiteDetails: {
+        urlTemplate: (p) => `https://ridb.recreation.gov/api/v1/facilities/${p.facilityId}/campsites/${p.campsiteId}`,
+        requiredParams: ['facilityId', 'campsiteId'],
+        needsApiKey: true,
+    },
+};
+
 export default async function handler(request, response) {
     // 1. Get the API key from environment variables (securely stored in Vercel)
     const apiKey = process.env.RIDB_API_KEY;
-
-    // --- DEBUGGING STEP ---
-    console.log("[Serverless Function] RIDB_API_KEY found on server:", apiKey ? `...${apiKey.slice(-4)}` : 'NOT FOUND');
 
     if (!apiKey) {
         return response.status(500).json({ error: 'API key is not configured on the server.' });
@@ -23,47 +56,22 @@ export default async function handler(request, response) {
 
     // 2. Determine which API to call based on query parameters from the frontend
     const { type, ...params } = request.query;
-    let upstreamUrl;
+    const routeConfig = API_ROUTES[type];
 
     try {
-        switch (type) {
-            case 'campgroundMetadata':
-                if (!params.campgroundId) throw new Error('Missing campgroundId');
-                upstreamUrl = `https://www.recreation.gov/api/camps/campgrounds/${params.campgroundId}`;
-                break;
+        if (!routeConfig) {
+            return response.status(400).json({ error: `Invalid API type specified: '${type}'` });
+        }
 
-            case 'availability':
-                if (!params.campgroundId || !params.start_date) throw new Error('Missing campgroundId or start_date');
-                upstreamUrl = `https://www.recreation.gov/api/camps/availability/campground/${params.campgroundId}/month?start_date=${encodeURIComponent(params.start_date)}`;
-                break;
+        for (const param of routeConfig.requiredParams) {
+            if (!params[param]) {
+                throw new Error(`Missing required parameter '${param}' for type '${type}'`);
+            }
+        }
 
-            case 'facilityDetails':
-                if (!params.facilityId) throw new Error('Missing facilityId');
-                upstreamUrl = `https://ridb.recreation.gov/api/v1/facilities/${params.facilityId}?apikey=${apiKey}`;
-                break;
-
-            case 'recAreaDetails':
-                if (!params.recAreaId) throw new Error('Missing recAreaId');
-                upstreamUrl = `https://ridb.recreation.gov/api/v1/recareas/${params.recAreaId}?apikey=${apiKey}`;
-                break;
-
-            case 'recAreaEvents':
-                if (!params.recAreaId) throw new Error('Missing recAreaId');
-                upstreamUrl = `https://ridb.recreation.gov/api/v1/recareas/${params.recAreaId}/events?apikey=${apiKey}`;
-                break;
-
-            case 'recAreaMedia':
-                if (!params.recAreaId) throw new Error('Missing recAreaId');
-                upstreamUrl = `https://ridb.recreation.gov/api/v1/recareas/${params.recAreaId}/media?apikey=${apiKey}`;
-                break;
-
-            case 'campsiteDetails':
-                if (!params.facilityId || !params.campsiteId) throw new Error('Missing facilityId or campsiteId');
-                upstreamUrl = `https://ridb.recreation.gov/api/v1/facilities/${params.facilityId}/campsites/${params.campsiteId}?apikey=${apiKey}`;
-                break;
-
-            default:
-                return response.status(400).json({ error: 'Invalid API type specified.' });
+        let upstreamUrl = routeConfig.urlTemplate(params);
+        if (routeConfig.needsApiKey) {
+            upstreamUrl += `?apikey=${apiKey}`;
         }
 
         // 3. Fetch data from the upstream API
