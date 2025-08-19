@@ -1,0 +1,141 @@
+table {
+    width: 80%;
+    border-collapse: collapse;
+    margin: 20px auto;
+    table-layout: fixed; /* Add this line */
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+    word-wrap: break-word; /* Add this line */
+}
+
+th {
+    background-color: #818181;
+}
+
+th:nth-child(1), /* Index column */
+td:nth-child(1) {
+  width: 30px; /* Set a fixed width for the index column */
+}
+
+th:nth-child(2), /* Site column */
+td:nth-child(2) {
+  width: 50px; /* Set a fixed width for the site column */
+}
+
+th:nth-child(3), /* Date column */
+td:nth-child(3) {
+  width: 100px; /* Set a fixed width for the date column */
+}
+
+th:nth-child(4), /* Availability column */
+td:nth-child(4) {
+  width: 80px; /* Set a fixed width for the availability column */
+}
+
+th:nth-child(5), /* Quantity column */
+td:nth-child(5) {
+  width: 30px; /* Set a fixed width for the quantity column */
+}
+
+th:nth-child(6), /* Campsite ID column */
+td:nth-child(6) {
+  width: 30px; /* Set a fixed width for the campsite ID column */
+}
+
+.reserved {
+    background-color: #630101; /* Light red */
+    color: #ffffff; /* white */
+}
+
+.closed {
+    background-color: #333333; /* Light gray */
+    color: #ffffff; /* white */
+}
+
+.available {
+    background-color: #5bff55; /* Light green */
+}
+
+.open {
+    background-color: #0056b3; /* Blue */
+    color: #ffffff; /* white */
+}
+
+.NYR {   /* Not Yet Released */
+  background-color: #002c06; /* black */
+  color: #ffffff; /* white */
+}
+
+.not-reservable {
+    background-color: #cccccc; /* Example: light grey */
+    color: #333333; /* Example: dark grey text */
+}
+
+.unknown {
+    background-color: #ff00ff; /* magenta */
+}
+
+/* Styles for Facility Details and Request Info */
+.facility-details {
+    background-color: #f0f0f0;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+}
+
+.facility-details h1 {
+    margin-top: 0;
+    font-size: 1.8em;
+    color: #333;
+}
+
+.facility-details p {
+    font-size: 0.9em;
+    line-height: 1.6;
+    color: #555;
+}
+.request-info {
+    font-size: 0.8em;
+    color: #777;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.date-range-info {
+    font-size: 0.9em;
+    color: #333;
+    background-color: #f7f7f7; /* Light background for emphasis */
+    padding: 10px 15px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.date-range-info strong {
+    color: #0056b3; /* A slightly darker blue for emphasis */
+}
+
+.availability-summary-main {
+    background-color: #f9f9f9;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+}
+
+.availability-summary-main h3 {
+    margin-top: 0;
+    color: #333;
+}
+
+.availability-summary-main p {
+    margin: 5px 0;
+    color: #555;
+}

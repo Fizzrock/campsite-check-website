@@ -1,0 +1,9 @@
+# Ignore Node.js dependencies folder
+node_modules/
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore local environment variables
+.env*.local
+.vercel

@@ -1,0 +1,17 @@
+{
+  "name": "campsite-availability-checker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A simple website to check for campground availability.",
+  "scripts": {
+    "start": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "keywords": [
+    "vercel",
+    "serverless",
+    "camping"
+  ],
+  "author": "",
+  "license": "ISC"
+}
