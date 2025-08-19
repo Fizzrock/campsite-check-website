@@ -10,21 +10,23 @@
  * 5. If the code is incorrect or missing, it blocks the request with an "Access Denied" message.
  */
 export default function middleware(request) {
-  console.log(`[Middleware] Running for path: ${request.url}`);
+  const url = new URL(request.url);
+
+  // Allow static files
+  if (url.pathname.match(/\.(css|js|png|jpg|jpeg|ico|svg|webp|woff2?)$/)) {
+    return; // allow
+  }
 
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
     return new Response("Access code not configured on server.", { status: 500 });
   }
 
-  const url = new URL(request.url);
   const providedCode = url.searchParams.get("access_code");
 
   if (providedCode === accessCode) {
-    console.log("[Middleware] Access code matched. Allowing request.");
-    return; // ✅ allow request to continue
+    return; // allow
   }
 
-  console.log("[Middleware] Access code missing or incorrect. Denying access.");
   return new Response("Access Denied", { status: 401 });
 }
