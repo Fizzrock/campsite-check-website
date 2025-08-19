@@ -160,6 +160,15 @@ const preset_UpperPines = {
     sites: [] // No specific sites, will show all
 };
 
+// A collection to make presets easily iterable and referenceable by name.
+const PRESET_COLLECTION = {
+    'Tuolumne Meadows': preset_TuolumneMeadows,
+    'Rock Creek (Patti)': preset_RockCreek_Patti,
+    'Rock Creek (All)': preset_RockCreek_All,
+    'Yosemite Creek': preset_YosemiteCreek,
+    'Upper Pines': preset_UpperPines
+};
+
 // --- Date Filtering Presets ---
 // These presets define different date ranges for the availability check.
 /*
@@ -237,7 +246,7 @@ const config = {
         // New Tab Toggles
         showRawJsonTab: false, // If true, opens a new tab with the full raw JSON response from the availability API.
         showAvailableOnlyTab: false, // If true, opens a new tab with only "Available" sites.
-        showFilteredSitesTab: false, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
+        showFilteredSitesTab: true, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
         showAvailabilitySummaryTab: false, // If true, opens a new tab with a summary of availability counts.
         showCampsitesObjectTab: false, // For debugging, not yet implemented
         showDebugTab: false // If true, opens a final tab with the entire `debugInfo` object for inspection.
@@ -1383,6 +1392,21 @@ async function displayAvailableSitesInNewTab(allCampsitesData, config, requestDa
 }
 
 /**
+ * Normalizes a site name for consistent lookups. It handles purely numeric sites
+ * by removing leading zeros, while leaving alphanumeric sites as-is.
+ * @param {string|number} name The site name or number.
+ * @returns {string} The normalized site name.
+ */
+function normalizeSiteName(name) {
+    const strName = String(name).trim().toUpperCase();
+    // If the site name is purely numeric, parse and convert back to string to remove leading zeros.
+    if (/^\d+$/.test(strName)) {
+        return String(parseInt(strName, 10));
+    }
+    return strName; // Return as-is for alphanumeric sites like 'A020'
+}
+
+/**
  * Renders a new tab showing only the campsites specified in the configuration's filter list.
  * This function can also fetch and display detailed information (like photos) for these specific sites.
  * @param {object} allCampsitesData The complete campsites data object.
@@ -1452,22 +1476,60 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 
     // 3. Define the asynchronous action to perform *after* the main table is rendered.
     const postRenderCallback = async (doc, containerDiv) => {
-        if (filteredRowsData.length === 0) return;
-
-        const detailsHeader = addInfoElement(doc, containerDiv, 'h2', "Detailed Information for Displayed Campsites");
-        if (detailsHeader) {
-            detailsHeader.style.marginTop = "30px";
-            detailsHeader.style.borderTop = "2px solid #ccc";
-            detailsHeader.style.paddingTop = "20px";
-        }
+        // --- START: In-Tab Debugging ---
+        const debugDiv = doc.createElement('div');
+        debugDiv.style.border = '2px dashed red';
+        debugDiv.style.padding = '10px';
+        debugDiv.style.marginTop = '20px';
+        debugDiv.style.fontFamily = 'monospace';
+        debugDiv.style.whiteSpace = 'pre-wrap';
+        addInfoElement(doc, debugDiv, 'h3', 'Live Debug Info for Filtered Tab');
+        const debugPre = doc.createElement('pre');
+        debugDiv.appendChild(debugPre);
+        containerDiv.appendChild(debugDiv);
+        let debugText = '';
+        const logDebug = (msg) => { debugText += msg + '\n'; debugPre.textContent = debugText; };
+        // --- END: In-Tab Debugging ---
 
         const idsForDetailFetch = [];
-        const processedForDetailFetch = new Set();
-        const allUniqueIdsInFilteredList = [...new Set(filteredRowsData.map(item => item.campsite_id))];
 
         if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
-            idsForDetailFetch.push(...allUniqueIdsInFilteredList);
+            // When this flag is true, derive the list of sites to fetch directly
+            // from the configuration, not from the filtered availability results.
+            const siteNumbersToFilterArray = config.siteFilters.siteNumbersToFilter;
+            if (siteNumbersToFilterArray.length > 0 && allCampsitesData) {
+                logDebug(`'fetchDetailsForAllFilteredSites' is TRUE.`);
+                logDebug(`Sites to filter from config: [${siteNumbersToFilterArray.join(', ')}]`);
+                logDebug(`Total campsites in master list (allCampsitesData): ${Object.keys(allCampsitesData).length}`);
+
+                // Create a map for efficient lookup of site name -> campsite_id
+                const siteNameToIdMap = new Map();
+                for (const cId in allCampsitesData) {
+                    const campsite = allCampsitesData[cId];
+                    const normalizedName = normalizeSiteName(campsite.site);
+                    siteNameToIdMap.set(normalizedName, campsite.campsite_id);
+                }
+
+                logDebug(`Built siteNameToIdMap with ${siteNameToIdMap.size} entries.`);
+
+                siteNumbersToFilterArray.forEach(siteName => {
+                    const normalizedLookupName = normalizeSiteName(siteName);
+                    const campsiteId = siteNameToIdMap.get(normalizedLookupName);
+                    if (campsiteId) {
+                        idsForDetailFetch.push(campsiteId);
+                    } else {
+                        logDebug(`- WARN: Could not find campsite_id for site name "${siteName}" (normalized to "${normalizedLookupName}") in the map.`);
+                    }
+                });
+                logDebug(`Resulting idsForDetailFetch: [${idsForDetailFetch.join(', ')}]`);
+            }
         } else {
+            // When the flag is false, derive the list from the sites that actually
+            // appeared in the filtered availability data.
+            logDebug(`'fetchDetailsForAllFilteredSites' is FALSE.`);
+            const allUniqueIdsInFilteredList = [...new Set(filteredRowsData.map(item => item.campsite_id))];
+            const processedForDetailFetch = new Set();
+
             allUniqueIdsInFilteredList.forEach(cId => {
                 const entriesForThisCampsite = filteredRowsData.filter(item => item.campsite_id === cId);
                 const isAvailableInFilteredList = entriesForThisCampsite.some(item => item.availability === AVAILABILITY_STATUS.AVAILABLE);
@@ -1481,23 +1543,47 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                     processedForDetailFetch.add(cId);
                 }
             });
+            logDebug(`Resulting idsForDetailFetch from available rows: [${idsForDetailFetch.join(', ')}]`);
         }
 
+        // If, after all logic, there are no sites to fetch details for, we can exit.
+        if (idsForDetailFetch.length === 0) {
+            logDebug(`\nCONCLUSION: No site IDs were identified for detail fetching. Exiting callback.`);
+            return;
+        }
+
+        // Build a map of campsite_id -> site_number for sorting.
+        // Use the master `allCampsitesData` list to ensure we can sort
+        // even if a site has no availability data in the current range.
         const siteNumberMap = new Map();
-        filteredRowsData.forEach(item => {
-            if (!siteNumberMap.has(item.campsite_id)) {
-                const siteNum = parseInt(item.site.match(/\d+/)?.[0] || '0', 10);
-                siteNumberMap.set(item.campsite_id, siteNum);
+        if (allCampsitesData) {
+            for (const cId in allCampsitesData) {
+                const campsite = allCampsitesData[cId];
+                if (campsite && campsite.site && !siteNumberMap.has(cId)) {
+                    const siteNum = parseInt(campsite.site.match(/\d+/)?.[0] || '0', 10);
+                    siteNumberMap.set(cId, siteNum);
+                }
             }
-        });
+        }
+        logDebug(`\nBuilt siteNumberMap for sorting with ${siteNumberMap.size} entries.`);
         idsForDetailFetch.sort((idA, idB) => {
             const siteNumA = siteNumberMap.get(idA) || 0;
             const siteNumB = siteNumberMap.get(idB) || 0;
             return siteNumA - siteNumB;
         });
+        logDebug(`Sorted idsForDetailFetch: [${idsForDetailFetch.join(', ')}]`);
+
         const detailPromises = idsForDetailFetch.map(cId =>
             fetchCampsiteDetails(currentRidbFacilityId, cId)
         );
+
+        // Add the header for the details section now that we know we have details to fetch.
+        const detailsHeader = addInfoElement(doc, containerDiv, 'h2', "Detailed Information for Filtered Campsites");
+        if (detailsHeader) {
+            detailsHeader.style.marginTop = "30px";
+            detailsHeader.style.borderTop = "2px solid #ccc";
+            detailsHeader.style.paddingTop = "20px";
+        }
 
         const loadingDetailsP = addInfoElement(doc, containerDiv, 'p', "Loading detailed information for each campsite...");
         const allDetailsResults = await Promise.allSettled(detailPromises);
@@ -2399,17 +2485,26 @@ async function runAvailabilityCheck(config) {
  * @param {object} configObject The configuration object to use for populating the form.
  */
 function populateFormFromConfig(configObject) {
-    // Set text and date inputs
-    document.getElementById('campgroundId').value = configObject.api.campgroundId || '';
-    document.getElementById('filterStartDate').value = configObject.filters.filterStartDate || '';
-    document.getElementById('filterEndDate').value = configObject.filters.filterEndDate || '';
-    document.getElementById('siteNumbers').value = (configObject.siteFilters.siteNumbersToFilter || []).join(', ');
+    // Defensively update form fields only if the corresponding data exists in the config object.
+    if (configObject.api && configObject.api.campgroundId !== undefined) {
+        document.getElementById('campgroundId').value = configObject.api.campgroundId;
+    }
 
-    // Set checkbox states
-    for (const key in configObject.display) {
-        const checkbox = document.querySelector(`input[name="${key}"]`);
-        if (checkbox) {
-            checkbox.checked = configObject.display[key];
+    if (configObject.filters) {
+        document.getElementById('filterStartDate').value = configObject.filters.filterStartDate || '';
+        document.getElementById('filterEndDate').value = configObject.filters.filterEndDate || '';
+    }
+
+    if (configObject.siteFilters && configObject.siteFilters.siteNumbersToFilter !== undefined) {
+        document.getElementById('siteNumbers').value = (configObject.siteFilters.siteNumbersToFilter || []).join(', ');
+    }
+
+    if (configObject.display) {
+        for (const key in configObject.display) {
+            const checkbox = document.querySelector(`input[name="${key}"]`);
+            if (checkbox) {
+                checkbox.checked = configObject.display[key];
+            }
         }
     }
 }
@@ -2454,6 +2549,25 @@ async function handleFormSubmit(event) {
 }
 
 /**
+ * Handles the change event for the preset dropdown. It loads the selected
+ * preset's configuration into the form fields.
+ * @param {Event} event The change event from the select element.
+ */
+function handlePresetChange(event) {
+    const selectedPresetName = event.target.value;
+    const selectedPreset = PRESET_COLLECTION[selectedPresetName];
+
+    if (!selectedPreset) return;
+
+    // Create a temporary config object from the preset to populate the form
+    const presetConfig = {
+        api: { campgroundId: selectedPreset.campgroundId },
+        siteFilters: { siteNumbersToFilter: selectedPreset.sites }
+    };
+    populateFormFromConfig(presetConfig);
+}
+
+/**
  * Handles the click event for the "Copy Sharable Link" button. It reads the
  * current form state, constructs a URL with query parameters, and copies it
  * to the clipboard.
@@ -2493,10 +2607,24 @@ function handleCopyLink() {
 function initializePage() {
     const form = document.getElementById('config-form');
     const copyLinkButton = document.getElementById('copy-link-button');
+    const presetSelector = document.getElementById('preset-selector');
 
-    if (!form || !copyLinkButton) {
-        console.error("Configuration form or buttons not found. Aborting initialization.");
+    if (!form || !copyLinkButton || !presetSelector) {
+        console.error("Required form elements not found. Aborting initialization.");
         return;
+    }
+
+    // Populate the preset dropdown
+    const defaultOption = document.createElement('option');
+    defaultOption.value = "";
+    defaultOption.textContent = "Select a Preset...";
+    presetSelector.appendChild(defaultOption);
+
+    for (const presetName in PRESET_COLLECTION) {
+        const option = document.createElement('option');
+        option.value = presetName;
+        option.textContent = presetName;
+        presetSelector.appendChild(option);
     }
 
     // 1. Create initial config from URL params, falling back to the hardcoded defaults
@@ -2526,6 +2654,7 @@ function initializePage() {
     // 3. Attach event listeners (handlers will be implemented in the next step)
     form.addEventListener('submit', handleFormSubmit);
     copyLinkButton.addEventListener('click', handleCopyLink);
+    presetSelector.addEventListener('change', handlePresetChange);
 
     console.log("Page initialized. Ready for user input.");
 }

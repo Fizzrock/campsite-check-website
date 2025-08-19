@@ -12,6 +12,23 @@ h1 {
     color: #2c3e50;
 }
 
+.instructions {
+    background-color: #eef7ff;
+    border: 1px solid #b3d7f7;
+    border-radius: 8px;
+    padding: 10px 20px;
+    margin-bottom: 20px;
+}
+
+.instructions p {
+    margin-top: 0;
+}
+
+.instructions ol {
+    padding-left: 20px;
+    margin-bottom: 0;
+}
+
 form {
     background-color: #f9f9f9;
     padding: 20px;
@@ -55,6 +72,12 @@ legend {
     border-radius: 4px;
     box-sizing: border-box; /* Important for padding and width */
     font-size: 1em;
+}
+
+.form-note {
+    font-size: 0.8em;
+    color: #666;
+    margin-top: -5px; /* Pull it a bit closer to the inputs above */
 }
 
 table {
