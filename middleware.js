@@ -10,6 +10,8 @@
  * 5. If the code is incorrect or missing, it blocks the request with an "Access Denied" message.
  */
 export function middleware(request) {
+  console.log(`[Middleware] Running for path: ${request.url}`);
+
   // Retrieve the secret access code from environment variables.
   const accessCode = process.env.ACCESS_CODE;
 
@@ -26,10 +28,12 @@ export function middleware(request) {
   // In Vercel Edge Middleware (for non-Next.js projects), returning nothing
   // allows the request to continue to its destination.
   if (providedCode === accessCode) {
+    console.log('[Middleware] Access code matched. Allowing request.');
     return;
   }
 
   // Otherwise, deny access using the standard Response API.
+  console.log('[Middleware] Access code missing or incorrect. Denying access.');
   return new Response('Access Denied', { status: 401 });
 }
 
