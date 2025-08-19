@@ -1,4 +1,3 @@
-import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * Vercel Edge Middleware to protect the website with a URL-based access code.
@@ -19,15 +18,18 @@ export function middleware(request) {
     return new Response('Access code not configured on server.', { status: 500 });
   }
 
-  // Get the access code from the incoming request's URL query parameters.
-  const providedCode = request.nextUrl.searchParams.get('access_code');
+  // Use the standard URL API to parse the request URL.
+  const url = new URL(request.url);
+  const providedCode = url.searchParams.get('access_code');
 
   // If the provided code matches the secret, let the request proceed.
+  // In Vercel Edge Middleware (for non-Next.js projects), returning nothing
+  // allows the request to continue to its destination.
   if (providedCode === accessCode) {
-    return NextResponse.next();
+    return;
   }
 
-  // Otherwise, deny access.
+  // Otherwise, deny access using the standard Response API.
   return new Response('Access Denied', { status: 401 });
 }
 
