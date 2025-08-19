@@ -235,12 +235,12 @@ const config = {
         showRecAreaMediaOnMainPage: true, // If true, fetches and displays RecArea media on the main page.
 
         // New Tab Toggles
-        showRawJsonTab: true, // If true, opens a new tab with the full raw JSON response from the availability API.
-        showAvailableOnlyTab: true, // If true, opens a new tab with only "Available" sites.
-        showFilteredSitesTab: true, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
+        showRawJsonTab: false, // If true, opens a new tab with the full raw JSON response from the availability API.
+        showAvailableOnlyTab: false, // If true, opens a new tab with only "Available" sites.
+        showFilteredSitesTab: false, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
         showAvailabilitySummaryTab: false, // If true, opens a new tab with a summary of availability counts.
         showCampsitesObjectTab: false, // For debugging, not yet implemented
-        showDebugTab: true // If true, opens a final tab with the entire `debugInfo` object for inspection.
+        showDebugTab: false // If true, opens a final tab with the entire `debugInfo` object for inspection.
     },
     ////////////////////////////////////////
     // --- Behavior Configuration for Tabs ---
@@ -2358,7 +2358,7 @@ function handleFetchError(error, containerElement) {
 async function runAvailabilityCheck(config) {
     debugInfo.timestamps.start = new Date().toISOString(); // Record start time
 
-    const mainContainer = typeof document !== 'undefined' ? document.getElementById("availability-table") : null;
+    const mainContainer = typeof document !== 'undefined' ? document.getElementById("results-container") : null;
     if (typeof document !== 'undefined') {
         initLightbox(document); // Initialize lightbox on the main page
     }
@@ -2387,4 +2387,152 @@ async function runAvailabilityCheck(config) {
     }
 }
 
-runAvailabilityCheck(config); // Start the process
+// =================================================================================================
+// --- Dynamic UI Logic & Event Handling ---
+// The following functions handle the interactive form and dynamic configuration.
+// =================================================================================================
+
+/**
+ * Populates the HTML form with values from a given configuration object.
+ * This function ensures the UI always reflects the current settings, whether
+ * they come from defaults or from a shared URL.
+ * @param {object} configObject The configuration object to use for populating the form.
+ */
+function populateFormFromConfig(configObject) {
+    // Set text and date inputs
+    document.getElementById('campgroundId').value = configObject.api.campgroundId || '';
+    document.getElementById('filterStartDate').value = configObject.filters.filterStartDate || '';
+    document.getElementById('filterEndDate').value = configObject.filters.filterEndDate || '';
+    document.getElementById('siteNumbers').value = (configObject.siteFilters.siteNumbersToFilter || []).join(', ');
+
+    // Set checkbox states
+    for (const key in configObject.display) {
+        const checkbox = document.querySelector(`input[name="${key}"]`);
+        if (checkbox) {
+            checkbox.checked = configObject.display[key];
+        }
+    }
+}
+
+/**
+ * Reads all values from the form and builds a dynamic configuration object.
+ * This is called when the user initiates a new search.
+ * @returns {object} A complete configuration object ready for `runAvailabilityCheck`.
+ */
+function buildConfigFromForm() {
+    const newConfig = JSON.parse(JSON.stringify(config)); // Start with a deep copy of defaults
+
+    // Update API and filter values from text/date inputs
+    newConfig.api.campgroundId = document.getElementById('campgroundId').value.trim();
+    newConfig.filters.filterStartDate = document.getElementById('filterStartDate').value;
+    newConfig.filters.filterEndDate = document.getElementById('filterEndDate').value;
+
+    // Parse site numbers from textarea
+    const sitesText = document.getElementById('siteNumbers').value;
+    newConfig.siteFilters.siteNumbersToFilter = sitesText.split(',').map(s => s.trim()).filter(Boolean);
+
+    // Update display toggles from checkboxes
+    for (const key in newConfig.display) {
+        const checkbox = document.querySelector(`input[name="${key}"]`);
+        if (checkbox) {
+            newConfig.display[key] = checkbox.checked;
+        }
+    }
+
+    return newConfig;
+}
+
+/**
+ * Handles the form submission event. It prevents the default page reload,
+ * builds a new config from the form, and starts the availability check.
+ * @param {Event} event The form submission event.
+ */
+async function handleFormSubmit(event) {
+    event.preventDefault(); // Stop the browser from reloading the page
+    const dynamicConfig = buildConfigFromForm();
+    await runAvailabilityCheck(dynamicConfig);
+}
+
+/**
+ * Handles the click event for the "Copy Sharable Link" button. It reads the
+ * current form state, constructs a URL with query parameters, and copies it
+ * to the clipboard.
+ */
+function handleCopyLink() {
+    const dynamicConfig = buildConfigFromForm();
+    const baseUrl = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams();
+
+    // Add main search parameters
+    if (dynamicConfig.api.campgroundId) params.append('campgroundId', dynamicConfig.api.campgroundId);
+    if (dynamicConfig.filters.filterStartDate) params.append('filterStartDate', dynamicConfig.filters.filterStartDate);
+    if (dynamicConfig.filters.filterEndDate) params.append('filterEndDate', dynamicConfig.filters.filterEndDate);
+    if (dynamicConfig.siteFilters.siteNumbersToFilter.length > 0) {
+        params.append('sites', dynamicConfig.siteFilters.siteNumbersToFilter.join(','));
+    }
+
+    // Add all display flags
+    for (const key in dynamicConfig.display) {
+        params.append(key, dynamicConfig.display[key]);
+    }
+
+    const finalUrl = `${baseUrl}?${params.toString()}`;
+
+    navigator.clipboard.writeText(finalUrl).then(() => {
+        const copyButton = document.getElementById('copy-link-button');
+        const originalText = copyButton.textContent;
+        copyButton.textContent = 'Copied!';
+        setTimeout(() => { copyButton.textContent = originalText; }, 2000);
+    }).catch(err => console.error('Failed to copy link: ', err));
+}
+
+/**
+ * Initializes the page on load. It sets up the form with values from URL parameters
+ * or defaults from the `config` object, and attaches event listeners to the form buttons.
+ */
+function initializePage() {
+    const form = document.getElementById('config-form');
+    const copyLinkButton = document.getElementById('copy-link-button');
+
+    if (!form || !copyLinkButton) {
+        console.error("Configuration form or buttons not found. Aborting initialization.");
+        return;
+    }
+
+    // 1. Create initial config from URL params, falling back to the hardcoded defaults
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialConfig = JSON.parse(JSON.stringify(config)); // Deep copy of defaults
+
+    // Override defaults with URL parameters if they exist
+    initialConfig.api.campgroundId = urlParams.get('campgroundId') || initialConfig.api.campgroundId;
+    initialConfig.filters.filterStartDate = urlParams.get('filterStartDate') || initialConfig.filters.filterStartDate;
+    initialConfig.filters.filterEndDate = urlParams.get('filterEndDate') || initialConfig.filters.filterEndDate;
+
+    const sitesFromUrl = urlParams.get('sites');
+    if (sitesFromUrl) {
+        initialConfig.siteFilters.siteNumbersToFilter = sitesFromUrl.split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    // Handle boolean flags (checkboxes) from the URL
+    for (const key in initialConfig.display) {
+        if (urlParams.has(key)) {
+            initialConfig.display[key] = urlParams.get(key) === 'true';
+        }
+    }
+
+    // 2. Populate the form with the determined initial configuration
+    populateFormFromConfig(initialConfig);
+
+    // 3. Attach event listeners (handlers will be implemented in the next step)
+    form.addEventListener('submit', handleFormSubmit);
+    copyLinkButton.addEventListener('click', handleCopyLink);
+
+    console.log("Page initialized. Ready for user input.");
+}
+
+// --- Script Entry Point ---
+// The script now starts by listening for the DOM to be ready.
+document.addEventListener('DOMContentLoaded', initializePage);
+
+// The script is now controlled by event listeners, so we no longer call this automatically.
+// runAvailabilityCheck(config);
