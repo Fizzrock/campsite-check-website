@@ -12,21 +12,18 @@
 export default function middleware(request) {
   const url = new URL(request.url);
 
-  // Allow static files
-  if (url.pathname.match(/\.(css|js|png|jpg|jpeg|ico|svg|webp|woff2?)$/)) {
-    return; // allow
-  }
+  // Allow static assets
+  if (url.pathname.match(/\.(css|js|png|jpg|jpeg|ico|svg|webp|woff2?)$/)) return;
+
+  // Allow API routes
+  if (url.pathname.startsWith('/api/')) return;
 
   const accessCode = process.env.ACCESS_CODE;
-  if (!accessCode) {
-    return new Response("Access code not configured on server.", { status: 500 });
-  }
+  if (!accessCode) return new Response("Access code not configured on server.", { status: 500 });
 
   const providedCode = url.searchParams.get("access_code");
 
-  if (providedCode === accessCode) {
-    return; // allow
-  }
+  if (providedCode === accessCode) return;
 
   return new Response("Access Denied", { status: 401 });
 }
