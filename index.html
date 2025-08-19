@@ -1,55 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Campsite Availability Checker</title>
+    <title>Campsite Availability</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Campsite Availability Checker</h1>
-
-    <form id="config-form">
-        <!-- Main settings -->
-        <fieldset>
-            <legend>Search Configuration</legend>
-            <div class="form-grid">
-                <label for="campgroundId">Campground ID:</label>
-                <input type="text" id="campgroundId" name="campgroundId" required placeholder="e.g., 232448">
-
-                <label for="filterStartDate">Start Date:</label>
-                <input type="date" id="filterStartDate" name="filterStartDate">
-
-                <label for="filterEndDate">End Date:</label>
-                <input type="date" id="filterEndDate" name="filterEndDate">
-
-                <label for="siteNumbers">Site Numbers (comma-separated):</label>
-                <textarea id="siteNumbers" name="siteNumbers" rows="3" placeholder="e.g., A020, A022, 105"></textarea>
-            </div>
-        </fieldset>
-
-        <!-- Display Toggles -->
-        <fieldset>
-            <legend>Display & Tab Options</legend>
-            <div class="checkbox-grid">
-                <label><input type="checkbox" name="showMainDataTable" checked> Show Main Data Table</label>
-                <label><input type="checkbox" name="fetchAndShowEventsOnMainPage" checked> Show Events</label>
-                <label><input type="checkbox" name="showRecAreaMediaOnMainPage" checked> Show Media</label>
-                <label><input type="checkbox" name="showRawJsonTab" checked> Show Raw JSON Tab</label>
-                <label><input type="checkbox" name="showAvailableOnlyTab" checked> Show Available Sites Tab</label>
-                <label><input type="checkbox" name="showFilteredSitesTab" checked> Show Filtered Sites Tab</label>
-                <label><input type="checkbox" name="showDebugTab" checked> Show Debug Tab</label>
-            </div>
-        </fieldset>
-
-        <!-- Action Buttons -->
-        <div class="button-container">
-            <button type="submit">Run Availability Check</button>
-            <button type="button" id="copy-link-button">Copy Sharable Link</button>
-        </div>
-    </form>
-
-    <hr>
-
-    <div id="results-container"></div>
+    <h1>Campsite Availability</h1>
+    <div id="availability-table"></div>
     <script src="campgroundAvailability.js"></script>
 </body>
 </html>
