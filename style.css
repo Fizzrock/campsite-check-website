@@ -305,3 +305,48 @@ td:nth-child(6) {
 .notice-item:last-child {
     margin-bottom: 0;
 }
+
+/* --- In-Page Tab System --- */
+.tab-buttons {
+    border-bottom: 2px solid #ccc;
+    margin-bottom: 0; /* Remove margin to connect with panels */
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.tab-buttons button {
+    background-color: #f1f1f1;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    padding: 10px 15px;
+    cursor: pointer;
+    margin-right: 5px;
+    border-radius: 5px 5px 0 0;
+    font-size: 1em;
+    transition: background-color 0.2s ease;
+}
+
+.tab-buttons button:hover {
+    background-color: #ddd;
+}
+
+.tab-buttons button.active {
+    background-color: #fff;
+    border-color: #ccc;
+    border-bottom: 2px solid #fff; /* White border to blend with panel */
+    margin-bottom: -2px; /* Pull it down to cover the container's border */
+    font-weight: bold;
+}
+
+.tab-panels {
+    border: 1px solid #ccc;
+    border-top: none;
+    padding: 15px;
+    background-color: #fff;
+    border-radius: 0 0 5px 5px;
+    min-height: 200px; /* Ensure container has height even when empty */
+}
+
+.tab-panel {
+    display: none; /* All panels hidden by default */
+}

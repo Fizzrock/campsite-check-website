@@ -286,6 +286,8 @@ const config = {
         fetchDetailsForAllFilteredSites: true, // If true, fetches details for ALL sites in the filter list, regardless of status. Overrides the two flags below.
         fetchDetailsForAvailableFilteredSites: true, // If true, fetches details for any site in the filter list that has an "Available" day.
         fetchDetailsForNotReservableFilteredSites: true, // If true, fetches details for any site in the filter list that has a "Not Reservable" day.
+
+        openDebugTabInNewWindow: false // If true, the debug tab opens in a new window instead of an in-page tab.
     },
 
     // --- Sorting Preferences ---
@@ -372,6 +374,72 @@ const AVAILABILITY_STATUS = {
  * @property {Date} requestDateTime - The timestamp when the primary data request was made.
  * @property {IdCollection} ids - A collection of all relevant IDs.
  */
+
+// --- In-Page Tab System ---
+
+/**
+ * Shows a specific tab panel and highlights its corresponding button.
+ * This function is the core of the tab switching logic.
+ * @param {string} panelId The ID of the panel to show.
+ */
+function showTab(panelId) {
+    console.log(`[showTab] Activating tab for panel: ${panelId}`);
+    const buttonContainer = document.getElementById('tab-buttons');
+    const panelContainer = document.getElementById('tab-panels');
+
+    if (!buttonContainer || !panelContainer) return;
+
+    // Hide all panels
+    const panels = panelContainer.querySelectorAll('.tab-panel');
+    panels.forEach(panel => {
+        panel.style.display = 'none';
+    });
+
+    // Deactivate all buttons
+    const buttons = buttonContainer.querySelectorAll('button');
+    buttons.forEach(button => button.classList.remove('active'));
+
+    // Show the target panel and activate its button
+    const targetPanel = document.getElementById(panelId);
+    const targetButton = buttonContainer.querySelector(`button[data-panel-id="${panelId}"]`);
+    if (targetPanel) targetPanel.style.display = 'block';
+    if (targetButton) targetButton.classList.add('active');
+}
+
+/**
+ * Creates a new tab button and its corresponding content panel.
+ * @param {string} title The text to display on the tab button.
+ * @returns {HTMLDivElement|null} The content panel element to which content can be added, or null on failure.
+ */
+function createInPageTab(title) {
+    console.log(`[createInPageTab] Creating tab with title: "${title}"`);
+    const buttonContainer = document.getElementById('tab-buttons');
+    const panelContainer = document.getElementById('tab-panels');
+
+    if (!buttonContainer || !panelContainer) {
+        console.error("Tab container elements not found. Cannot create new tab.");
+        return null;
+    }
+
+    // Create a safe ID from the title to link the button and panel
+    const panelId = `tab-panel-${title.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+    // Create the button
+    const button = document.createElement('button');
+    button.textContent = title;
+    button.dataset.panelId = panelId; // Link button to its panel
+    button.addEventListener('click', () => showTab(panelId));
+
+    // Create the panel
+    const panel = document.createElement('div');
+    panel.id = panelId;
+    panel.className = 'tab-panel'; // Initially hidden by CSS
+
+    buttonContainer.appendChild(button);
+    panelContainer.appendChild(panel);
+
+    return panel;
+}
 
 /**
  * Injects the necessary CSS for the lightbox into the document's head.
@@ -1055,41 +1123,6 @@ function formatUTCDate(dateObj) {
 }
 
 /**
- * Creates and initializes a new browser tab with a given title and basic structure.
- * It handles potential pop-up blocker issues gracefully.
- * @param {string} title The title for the new browser tab.
- * @returns {{newTab: Window, containerDiv: HTMLDivElement, doc: Document}|null} An object containing the new tab's window, a main container div, and its document, or null if the tab could not be opened.
- */
-function initializeNewTab(title) {
-    if (typeof window === 'undefined' || !window.open) {
-        // Log attempt even if it fails, e.g., in a non-browser environment
-        debugInfo.errors.push({ context: 'initializeNewTab', message: `Cannot open new tab '${title}': 'window.open' is not available.` });
-        console.warn(`Cannot open new tab '${title}': 'window.open' is not available.`);
-        return null;
-    }
-    const newTab = window.open("", "_blank");
-    if (!newTab) {
-        console.warn(`Could not open new tab for '${title}'. Pop-up blocker might be active.`);
-        return null;
-    }
-
-    debugInfo.rendering.tabsOpened.push(title);
-
-    newTab.document.title = title;
-
-    const link = newTab.document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'style.css'; // Assuming style.css is in the same directory
-    newTab.document.head.appendChild(link);
-
-    const containerDiv = newTab.document.createElement('div');
-    containerDiv.className = 'tab-content-container'; // A general class for tab content styling
-    newTab.document.body.appendChild(containerDiv);
-
-    return { newTab, containerDiv, doc: newTab.document };
-}
-
-/**
  * Generates a human-readable string describing the active date filter range.
  * @param {string|null} filterStartStr The start date of the filter (YYYY-MM-DD).
  * @param {string|null} filterEndStr The end date of the filter (YYYY-MM-DD).
@@ -1114,6 +1147,38 @@ function getDateRangeDisplayText(filterStartStr, filterEndStr, defaultApiMonthSt
         }
     }
     return text;
+}
+
+/**
+ * Creates and initializes a new browser tab with a given title and basic structure.
+ * This is a simplified version of the old tab creator, used for debugging purposes
+ * to isolate issues with the in-page tab system.
+ * @param {string} title The title for the new browser tab.
+ * @returns {{newTab: Window, containerDiv: HTMLDivElement, doc: Document}|null} An object containing the new tab's window, a main container div, and its document, or null if the tab could not be opened.
+ */
+function openInNewWindow(title) {
+    if (typeof window === 'undefined' || !window.open) {
+        console.warn(`Cannot open new tab '${title}': 'window.open' is not available.`);
+        return null;
+    }
+    const newTab = window.open("", "_blank");
+    if (!newTab) {
+        console.warn(`Could not open new tab for '${title}'. Pop-up blocker might be active.`);
+        return null;
+    }
+
+    newTab.document.title = title;
+
+    const link = newTab.document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'style.css';
+    newTab.document.head.appendChild(link);
+
+    const containerDiv = newTab.document.createElement('div');
+    containerDiv.className = 'tab-content-container';
+    newTab.document.body.appendChild(containerDiv);
+
+    return { newTab, containerDiv, doc: newTab.document };
 }
 
 /**
@@ -1192,9 +1257,9 @@ function addRequestInfoElements(doc, parentElement, requestDateTime, response) {
  * for the main page and all configured new tabs.
  * @param {object} config The prepared configuration object.
  * @param {AllFetchedData} allData The comprehensive data object from `fetchAllData`.
- * @param {HTMLElement} mainContainer The main DOM element on the `index.html` page.
  */
-async function renderAllOutputs(allData, config, mainContainer) {
+async function renderAllOutputs(allData, config) {
+    console.log('[renderAllOutputs] Starting to render all outputs.');
     debugInfo.timestamps.renderStart = new Date().toISOString();
 
     const {
@@ -1217,28 +1282,45 @@ async function renderAllOutputs(allData, config, mainContainer) {
 
     const { campsites, availabilityCounts } = processAvailabilityData(finalAvailabilityData || { campsites: {} }, config);
 
-    renderMainPage(mainContainer, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recGovSearchData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
+    // Create the "Main" tab and render the primary content into it.
+    const mainTabPanel = createInPageTab('Main');
+    if (mainTabPanel) {
+        renderMainPage(mainTabPanel, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recGovSearchData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
+        showTab(mainTabPanel.id); // Activate the first tab by default
+    }
 
     console.log("[renderAllOutputs] Proceeding to open new tabs based on configuration.");
 
+    console.log('[renderAllOutputs] Checking if showRawJsonTab is enabled:', config.display.showRawJsonTab);
     if (config.display.showRawJsonTab) {
         const jsonData = (finalAvailabilityData.campsites && Object.keys(finalAvailabilityData.campsites).length > 0) ? finalAvailabilityData : { message: "No combined availability data to show." };
         displayDataInNewTab(jsonData, `Full API Response (Combined) - ${config.api.campgroundId}`);
     }
+    console.log('[renderAllOutputs] Checking if showFullMetadataTab is enabled:', config.display.showFullMetadataTab);
     if (config.display.showFullMetadataTab && campgroundMetadata) {
         displayDataInNewTab(campgroundMetadata, `Full Campground Metadata - ${config.api.campgroundId}`);
     }
+    console.log('[renderAllOutputs] Checking if showRecGovSearchDataTab is enabled:', config.display.showRecGovSearchDataTab);
     if (config.display.showRecGovSearchDataTab && recGovSearchData) {
         displayDataInNewTab(recGovSearchData, `Rec.gov Search Data - ${config.api.campgroundId}`);
     }
+    console.log('[renderAllOutputs] Checking if showAvailabilitySummaryTab is enabled:', config.display.showAvailabilitySummaryTab);
     if (config.display.showAvailabilitySummaryTab) {
         displayAvailabilitySummaryInNewTab(availabilityCounts, config, requestDateTime, response);
     }
+    console.log('[renderAllOutputs] Checking if showAvailableOnlyTab is enabled:', config.display.showAvailableOnlyTab);
     if (config.display.showAvailableOnlyTab) {
         await displayAvailableSitesInNewTab(campsites, config, requestDateTime, response);
     }
+    console.log('[renderAllOutputs] Checking if showFilteredSitesTab is enabled:', config.display.showFilteredSitesTab);
     if (config.display.showFilteredSitesTab) {
         await displayFilteredSitesInNewTab(campsites, config, ids.facilityId, requestDateTime, response);
+    }
+
+    // For diagnostics, always render the debug tab last.
+    console.log('[renderAllOutputs] Checking if showDebugTab is enabled:', config.display.showDebugTab);
+    if (config.display.showDebugTab) {
+        displayDebugInfoInNewTab(debugInfo, config);
     }
 
     debugInfo.timestamps.renderComplete = new Date().toISOString();
@@ -1299,54 +1381,45 @@ async function renderTabularDataInNewTab(options) {
         postRenderCallback
     } = options;
 
-    const tabContext = initializeNewTab(tabTitle);
-    if (!tabContext) return;
+    const panel = createInPageTab(tabTitle);
+    if (!panel) return;
 
-    const { newTab, containerDiv, doc } = tabContext;
+    // Lightbox is already initialized on the main document.
 
-    // Initialize lightbox if a post-render action (like showing campsite details) might need it.
-    if (postRenderCallback) {
-        initLightbox(doc);
-    }
-
-    addInfoElement(doc, containerDiv, 'h1', pageTitle);
+    addInfoElement(document, panel, 'h1', pageTitle);
 
     // Display Date Range and other common headers
     const dateRangeText = getDateRangeDisplayText(config.filters.filterStartDate, config.filters.filterEndDate, config.filters.startDate);
-    addInfoElement(doc, containerDiv, 'p', '').innerHTML = dateRangeText;
+    addInfoElement(document, panel, 'p', '').innerHTML = dateRangeText;
 
     // Collect and display all unique loop names from the data
     const loopNames = new Set();
     if (allCampsitesData && Object.keys(allCampsitesData).length > 0) {
         for (const cId in allCampsitesData) {
-            if (allCampsitesData[cId].loop) {
-                loopNames.add(allCampsitesData[cId].loop);
-            }
+            if (allCampsitesData[cId].loop) loopNames.add(allCampsitesData[cId].loop);
         }
     }
     if (loopNames.size > 0) {
         const loopsArray = [...loopNames].sort();
         const loopLabel = loopNames.size > 1 ? "Loops" : "Loop";
-        addInfoElement(doc, containerDiv, 'h3', `${loopLabel}: ${loopsArray.join(', ')}`);
+        addInfoElement(document, panel, 'h3', `${loopLabel}: ${loopsArray.join(', ')}`);
     }
 
     // Execute the pre-table render callback if provided, to add custom headers.
-    if (preTableRenderCallback) preTableRenderCallback(doc, containerDiv);
-    
-    addRequestInfoElements(doc, containerDiv, requestDateTime, response);
+    if (preTableRenderCallback) preTableRenderCallback(document, panel);
+
+    addRequestInfoElements(document, panel, requestDateTime, response);
 
     if (!dataRows || dataRows.length === 0) {
-        addInfoElement(doc, containerDiv, 'p', noDataMessage);
+        addInfoElement(document, panel, 'p', noDataMessage);
     } else {
-        if (sortDescription) addInfoElement(doc, containerDiv, 'p', sortDescription, 'sort-info');
+        if (sortDescription) addInfoElement(document, panel, 'p', sortDescription, 'sort-info');
 
-        const { tbody } = createTableStructure(doc, headers, containerDiv);
-        dataRows.forEach((rowData, index) => tbody.appendChild(rowBuilder(doc, rowData, index)));
+        const { tbody } = createTableStructure(document, headers, panel);
+        dataRows.forEach((rowData, index) => tbody.appendChild(rowBuilder(document, rowData, index)));
     }
 
-    if (postRenderCallback) await postRenderCallback(doc, containerDiv);
-
-    newTab.document.close();
+    if (postRenderCallback) await postRenderCallback(document, panel);
 }
 
 /**
@@ -1356,24 +1429,17 @@ async function renderTabularDataInNewTab(options) {
  * @param {string} [title="Parsed API Data"] The title for the new tab.
  */
 function displayDataInNewTab(jsonData, title = "Parsed API Data") {
-    if (typeof window === 'undefined' || !window.open) {
-        console.warn("Cannot open new tab: 'window.open' is not available (e.g., running in Node.js).");
+    const panel = createInPageTab(title);
+    if (!panel) {
+        console.error(`Could not create tab panel for '${title}'.`);
         return;
     }
-    const newTab = window.open("", "_blank");
-    if (newTab) {
-        newTab.document.title = title;
 
-        addInfoElement(newTab.document, newTab.document.body, 'h1', title);
+    addInfoElement(document, panel, 'h1', title);
 
-        const preformattedText = newTab.document.createElement('pre');
-        preformattedText.textContent = JSON.stringify(jsonData, null, 2);
-        newTab.document.body.appendChild(preformattedText);
-
-        newTab.document.close();
-    } else {
-        console.warn("Could not open new tab. Pop-up blocker might be active or 'window.open' failed.");
-    }
+    const preformattedText = document.createElement('pre');
+    preformattedText.textContent = safeJsonStringify(jsonData);
+    panel.appendChild(preformattedText);
 }
 
 /**
@@ -1761,7 +1827,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 
     const pageTitle = `Filtered Campsite Availability - ${config.api.campgroundId}`;
     const sortDescription = config.sorting.sortFilteredSitesBy === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
-    const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? siteNumbersToFilterArray.join(", ") : "All"}) - ${config.api.campgroundId}`;
+    const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"}) - ${config.api.campgroundId}`;
 
     await renderTabularDataInNewTab({
         tabTitle: tabTitle,
@@ -1790,40 +1856,36 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 function displayAvailabilitySummaryInNewTab(availabilityCountsData, config, currentRequestDateTime, responseFromFetch) {
     const currentCampgroundId = config.api.campgroundId;
     const { filterStartDate, filterEndDate, startDate } = config.filters;
-
     const tabTitle = `Availability Summary - ${currentCampgroundId}`;
-    const tabContext = initializeNewTab(tabTitle);
-    if (!tabContext) {
+
+    const panel = createInPageTab(tabTitle);
+    if (!panel) {
         return;
     }
-    const { newTab, containerDiv, doc } = tabContext;
 
-    initLightbox(doc); // Initialize lightbox in the new tab
-
-    addInfoElement(doc, containerDiv, 'h1', `Availability Summary - ${currentCampgroundId}`);
+    addInfoElement(document, panel, 'h1', `Availability Summary - ${currentCampgroundId}`);
 
     // Display Date Range
     const dateRangeText = getDateRangeDisplayText(filterStartDate, filterEndDate, startDate);
-    addInfoElement(doc, containerDiv, 'p', '').innerHTML = dateRangeText;
+    addInfoElement(document, panel, 'p', '').innerHTML = dateRangeText;
 
-    addRequestInfoElements(doc, containerDiv, currentRequestDateTime, responseFromFetch);
+    addRequestInfoElements(document, panel, currentRequestDateTime, responseFromFetch);
     if (Object.keys(availabilityCountsData).length > 0) {
-        const summaryList = doc.createElement('ul');
+        const summaryList = document.createElement('ul');
         summaryList.style.listStyleType = 'none';
         summaryList.style.paddingLeft = '0';
 
         for (const type in availabilityCountsData) {
             const count = availabilityCountsData[type];
-            const listItem = doc.createElement('li');
+            const listItem = document.createElement('li');
             listItem.textContent = `${type}: ${count}`;
             listItem.className = `summary-item ${getAvailabilityClass(type)}`; // Add class for styling
             summaryList.appendChild(listItem);
         }
-        containerDiv.appendChild(summaryList);
+        panel.appendChild(summaryList);
     } else {
-        addInfoElement(doc, containerDiv, 'p', "No availability data to summarize for the selected period.");
+        addInfoElement(document, panel, 'p', "No availability data to summarize for the selected period.");
     }
-    newTab.document.close();
 }
 
 /**
@@ -2038,25 +2100,38 @@ function createDownloadLink(doc, jsonData, filename) {
 /**
  * Displays the final debugInfo object in a new tab for easy inspection.
  * @param {object} debugData The populated debugInfo object.
+ * @param {object} config The configuration object for the current run.
  */
-function displayDebugInfoInNewTab(debugData) {
-    const tabContext = initializeNewTab(`Debug Info - ${config.api.campgroundId}`);
-    if (!tabContext) return;
+function displayDebugInfoInNewTab(debugData, config) {
+    const tabTitle = `Debug Info - ${config.api.campgroundId}`;
+    const downloadFilename = `debug_info_${config.api.campgroundId}_${new Date().toISOString().split('T')[0]}.json`;
 
-    const { newTab, containerDiv, doc } = tabContext;
+    if (config.tabBehavior.openDebugTabInNewWindow) {
+        // --- Open in a separate browser window ---
+        const tabContext = openInNewWindow(tabTitle);
+        if (!tabContext) return;
 
-    addInfoElement(doc, containerDiv, 'h1', 'Script Execution Debug Information');
+        const { newTab, containerDiv, doc } = tabContext;
+        addInfoElement(doc, containerDiv, 'h1', 'Script Execution Debug Information');
+        const downloadLink = createDownloadLink(doc, debugData, downloadFilename);
+        containerDiv.appendChild(downloadLink);
+        const pre = doc.createElement('pre');
+        pre.textContent = safeJsonStringify(debugData);
+        containerDiv.appendChild(pre);
+        newTab.document.close();
+    } else {
+        // --- Open as an in-page tab ---
+        const panel = createInPageTab(tabTitle);
+        if (!panel) return;
 
-    // Add the download link to the top of the tab
-    const downloadLink = createDownloadLink(doc, debugData, `debug_info_${config.api.campgroundId}_${new Date().toISOString().split('T')[0]}.json`);
-    containerDiv.appendChild(downloadLink);
-    const pre = doc.createElement('pre');
-    pre.textContent = safeJsonStringify(debugData);
-    containerDiv.appendChild(pre);
-
-    newTab.document.close();
+        addInfoElement(document, panel, 'h1', 'Script Execution Debug Information');
+        const downloadLink = createDownloadLink(document, debugData, downloadFilename);
+        panel.appendChild(downloadLink);
+        const pre = document.createElement('pre');
+        pre.textContent = safeJsonStringify(debugData);
+        panel.appendChild(pre);
+    }
 }
-
 /**
  * Renders a detailed block for a single campsite within a parent element.
  * This includes attributes, permitted equipment, and a media gallery.
@@ -3109,23 +3184,21 @@ function handleFetchError(error, containerElement) {
  * @param {object} config The initial configuration object.
  */
 async function runAvailabilityCheck(config) {
-    debugInfo.timestamps.start = new Date().toISOString(); // Record start time
+    debugInfo.timestamps.start = new Date().toISOString();
 
-    const mainContainer = typeof document !== 'undefined' ? document.getElementById("results-container") : null;
     if (typeof document !== 'undefined') {
-        initLightbox(document); // Initialize lightbox on the main page
+        initLightbox(document);
     }
 
-    // Prepare configuration by calculating effective dates
-    const effectiveConfig = prepareConfig(JSON.parse(JSON.stringify(config))); // Deep copy to prevent mutation of original config
+    const effectiveConfig = prepareConfig(JSON.parse(JSON.stringify(config)));
 
     try {
         const allData = await fetchAllData(effectiveConfig);
-        // console.log("Rec.gov Search Data Response:", allData.recGovSearchData);
-        await renderAllOutputs(allData, effectiveConfig, mainContainer);
-    } catch (error) { // Catch errors not handled by Promise.allSettled's individual rejections
+        await renderAllOutputs(allData, effectiveConfig);
+    } catch (error) {
+        console.error("ERROR CAUGHT in runAvailabilityCheck's main try/catch block.");
         console.error("Unhandled error in runAvailabilityCheck:", error);
-        handleFetchError(error, mainContainer);
+        handleFetchError(error, document.getElementById('tab-panels'));
     } finally {
         debugInfo.timestamps.end = new Date().toISOString();
         console.log("Script execution finished. Final debug object:", debugInfo);
@@ -3133,10 +3206,6 @@ async function runAvailabilityCheck(config) {
         if (typeof window !== 'undefined') {
             window.debugInfo = debugInfo;
             console.log("Debug object assigned to 'window.debugInfo' for inspection in the browser console.");
-        }
-
-        if (effectiveConfig.display.showDebugTab) {
-            displayDebugInfoInNewTab(debugInfo);
         }
     }
 }
@@ -3202,6 +3271,10 @@ function populateFormFromConfig(configObject) {
             document.getElementById('filteredSitesDetailFetch').value = 'available_or_not_reservable';
         } else {
             document.getElementById('filteredSitesDetailFetch').value = 'only_available';
+        }
+
+        if (behavior.openDebugTabInNewWindow !== undefined) {
+            document.getElementById('openDebugTabInNewWindow').checked = behavior.openDebugTabInNewWindow;
         }
     }
 }
@@ -3275,6 +3348,7 @@ function buildConfigFromForm() {
             behavior.fetchDetailsForNotReservableFilteredSites = false;
             break;
     }
+    behavior.openDebugTabInNewWindow = document.getElementById('openDebugTabInNewWindow').checked;
 
     return newConfig;
 }
@@ -3285,7 +3359,29 @@ function buildConfigFromForm() {
  * @param {Event} event The form submission event.
  */
 async function handleFormSubmit(event) {
-    event.preventDefault(); // Stop the browser from reloading the page
+    console.log('[handleFormSubmit] Form submitted. Preventing default page reload.');
+    event.preventDefault();
+
+    // Prepare the new tabbed interface for results
+    const resultsTabsContainer = document.getElementById('results-tabs-container');
+    const tabButtonsContainer = document.getElementById('tab-buttons');
+    const tabPanelsContainer = document.getElementById('tab-panels');
+    console.log('[handleFormSubmit] resultsTabsContainer found:', !!resultsTabsContainer);
+
+    if (resultsTabsContainer && tabButtonsContainer && tabPanelsContainer) {
+        // Clear any previous results
+        console.log('[handleFormSubmit] Clearing previous tab results.');
+        tabButtonsContainer.innerHTML = '';
+        tabPanelsContainer.innerHTML = '';
+
+        // Make the tab system visible for the new results
+        console.log('[handleFormSubmit] Setting resultsTabsContainer display to "block".');
+        resultsTabsContainer.style.display = 'block';
+    } else {
+        console.error("Could not find tab container elements. Aborting run.");
+        return;
+    }
+
     const dynamicConfig = buildConfigFromForm();
     await runAvailabilityCheck(dynamicConfig);
 }
@@ -3347,6 +3443,7 @@ function handleCopyLink() {
     params.append('includeNotReservableInAvailableTab', document.getElementById('includeNotReservableInAvailableTab').checked);
     params.append('filteredSitesTableContent', document.getElementById('filteredSitesTableContent').value);
     params.append('filteredSitesDetailFetch', document.getElementById('filteredSitesDetailFetch').value);
+    params.append('openDebugTabInNewWindow', document.getElementById('openDebugTabInNewWindow').checked);
 
     const finalUrl = `${baseUrl}?${params.toString()}`;
 
@@ -3491,6 +3588,10 @@ async function initializePage() {
                 initialConfig.tabBehavior.fetchDetailsForNotReservableFilteredSites = false;
                 break;
         }
+    }
+
+    if (urlParams.has('openDebugTabInNewWindow')) {
+        initialConfig.tabBehavior.openDebugTabInNewWindow = urlParams.get('openDebugTabInNewWindow') === 'true';
     }
 
     // 2. Populate the form with the determined initial configuration

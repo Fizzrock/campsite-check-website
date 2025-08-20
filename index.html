@@ -90,6 +90,9 @@
                     <option value="available_or_not_reservable">Sites that are 'Available' or 'Not Reservable'</option>
                     <option value="only_available">Only sites that have 'Available' dates</option>
                 </select>
+
+                <label for="openDebugTabInNewWindow">Debug Tab:</label>
+                <label class="checkbox-label-inline"><input type="checkbox" id="openDebugTabInNewWindow" name="openDebugTabInNewWindow"> Open in New Window</label>
             </div>
         </fieldset>
 
@@ -102,11 +105,16 @@
 
     <hr>
 
+    <!-- Container for the new in-page tab system -->
+    <div id="results-tabs-container" style="display: none;">
+        <div id="tab-buttons" class="tab-buttons"></div>
+        <div id="tab-panels" class="tab-panels"></div>
+    </div>
+
     <!-- <div id="live-debug-panel" style="display: none;">
         <h3>Live Debug Panel</h3>
     </div> -->
 
-    <div id="results-container"></div>
     <script src="campgroundAvailability.js"></script>
 </body>
 </html>
