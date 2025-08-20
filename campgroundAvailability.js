@@ -83,6 +83,7 @@
  *
  * --- Running the Local Server ---
  * 1. Open a terminal in the project's root directory (e.g., `.../campsite-check-website/`).
+ * cd "D:\Fizzrock\My Custom Scripts\VScode Workspaces\AutomatedCampingWebStuff\WebStuff\CampgoundReservations\CampAvailable\campsite-check-website"
  *
  * 2. Pull Environment Variables: Run `vercel env pull .env.development.local`. This creates
  *    a local file with the secret API key you stored in your Vercel project settings.
@@ -93,6 +94,7 @@
  *    - The terminal will show `> Ready! Available at http://localhost:3000`.
  *
  * 4. Test in Browser: Open your browser and go to `http://localhost:3000`.
+ * -->> USE THIS -->> http://localhost:3000/?access_code=a_very_secret_password_123
  *
  * --- Important Notes ---
  * - Pop-up Blocker: The script opens multiple tabs. The first time you run it, your browser
@@ -242,6 +244,7 @@ const config = {
         showAvailableOnlyTab: false, // If true, opens a new tab with only "Available" sites.
         showFilteredSitesTab: true, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
         showAvailabilitySummaryTab: false, // If true, opens a new tab with a summary of availability counts.
+        showFullMetadataTab: false, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
         showCampsitesObjectTab: false, // For debugging, not yet implemented
         showDebugTab: false // If true, opens a final tab with the entire `debugInfo` object for inspection.
     },
@@ -335,6 +338,7 @@ const AVAILABILITY_STATUS = {
 
 /**
  * @typedef {object} AllFetchedData
+ * @property {object|null} campgroundMetadata - Detailed data for the campground from recreation.gov.
  * @property {object|null} facilityDetails - Detailed data for the facility from RIDB.
  * @property {object|null} recAreaDetails - Detailed data for the parent recreation area from RIDB.
  * @property {Array<object>|null} eventsData - Array of event data from RIDB.
@@ -798,6 +802,7 @@ async function fetchAllData(config) {
     }
 
     return {
+        campgroundMetadata,
         facilityDetails,
         recAreaDetails,
         eventsData,
@@ -1143,6 +1148,7 @@ async function renderAllOutputs(allData, config, mainContainer) {
     debugInfo.timestamps.renderStart = new Date().toISOString();
 
     const {
+        campgroundMetadata,
         facilityDetails,
         recAreaDetails,
         eventsData,
@@ -1160,13 +1166,16 @@ async function renderAllOutputs(allData, config, mainContainer) {
 
     const { campsites, availabilityCounts } = processAvailabilityData(finalAvailabilityData || { campsites: {} }, config);
 
-    renderMainPage(mainContainer, facilityDetails, recAreaDetails, eventsData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
+    renderMainPage(mainContainer, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
 
     console.log("[renderAllOutputs] Proceeding to open new tabs based on configuration.");
 
     if (config.display.showRawJsonTab) {
         const jsonData = (finalAvailabilityData.campsites && Object.keys(finalAvailabilityData.campsites).length > 0) ? finalAvailabilityData : { message: "No combined availability data to show." };
         displayDataInNewTab(jsonData, `Full API Response (Combined) - ${config.api.campgroundId}`);
+    }
+    if (config.display.showFullMetadataTab && campgroundMetadata) {
+        displayDataInNewTab(campgroundMetadata, `Full Campground Metadata - ${config.api.campgroundId}`);
     }
     if (config.display.showAvailabilitySummaryTab) {
         displayAvailabilitySummaryInNewTab(availabilityCounts, config, requestDateTime, response);
@@ -1209,7 +1218,7 @@ async function renderAllOutputs(allData, config, mainContainer) {
  * @property {string} sortDescription Text describing how the data is sorted.
  * @property {string} noDataMessage Message to display if `dataRows` is empty.
  * @property {RowBuilderCallback} rowBuilder A function that builds a `<tr>` from a data row.
- * @property {Array<HTMLElement>} [customHeaderElements] An optional array of custom elements to insert into the header.
+ * @property {function(Document, HTMLElement): void} [preTableRenderCallback] An optional function to run before the main table is rendered.
  * @property {PostRenderCallback} [postRenderCallback] An optional async function to run after the table is rendered.
  */
 
@@ -1232,7 +1241,7 @@ async function renderTabularDataInNewTab(options) {
         sortDescription,
         noDataMessage,
         rowBuilder,
-        customHeaderElements,
+        preTableRenderCallback,
         postRenderCallback
     } = options;
 
@@ -1267,11 +1276,9 @@ async function renderTabularDataInNewTab(options) {
         addInfoElement(doc, containerDiv, 'h3', `${loopLabel}: ${loopsArray.join(', ')}`);
     }
 
-    // Render any custom header elements provided by the caller
-    if (customHeaderElements && Array.isArray(customHeaderElements)) {
-        customHeaderElements.forEach(el => containerDiv.appendChild(el));
-    }
-
+    // Execute the pre-table render callback if provided, to add custom headers.
+    if (preTableRenderCallback) preTableRenderCallback(doc, containerDiv);
+    
     addRequestInfoElements(doc, containerDiv, requestDateTime, response);
 
     if (!dataRows || dataRows.length === 0) {
@@ -1415,12 +1422,16 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
     const notReservableOnlyConfig = config.tabBehavior.showFilteredSitesNotReservableOnly;
     const isFilteringBySiteNumber = siteNumbersToFilterArray && siteNumbersToFilterArray.length > 0;
 
+    // Create a normalized version of the filter list for consistent matching (e.g., '20' should match '020').
+    const normalizedSiteNumbersToFilter = siteNumbersToFilterArray.map(normalizeSiteName);
+
     // 1. Filter and sort the data based on this tab's specific criteria.
     const filteredRowsData = [];
     if (allCampsitesData && Object.keys(allCampsitesData).length > 0) {
         for (const cId in allCampsitesData) {
             const campsite = allCampsitesData[cId];
-            const siteMatchesFilter = !isFilteringBySiteNumber || siteNumbersToFilterArray.includes(campsite.site);
+            // Normalize the site name from the API before comparing it to the normalized filter list.
+            const siteMatchesFilter = !isFilteringBySiteNumber || normalizedSiteNumbersToFilter.includes(normalizeSiteName(campsite.site));
             if (siteMatchesFilter) {
                 for (const dateStr in campsite.availabilities) {
                     const currentAvailability = campsite.availabilities[dateStr];
@@ -1593,62 +1604,62 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
     };
 
     // 4. Configure and call the generic renderer.
-    const customHeaderElements = [];
+    const preTableRenderCallback = (doc, containerDiv) => {
+        // --- Create Availability Summary if showing all statuses ---
+        if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
+            const availableInFiltered = filteredRowsData.filter(
+                row => row.availability === AVAILABILITY_STATUS.AVAILABLE || row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE
+            );
 
-    // --- Create Availability Summary if showing all statuses ---
-    if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
-        const availableInFiltered = filteredRowsData.filter(
-            row => row.availability === AVAILABILITY_STATUS.AVAILABLE || row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE
-        );
+            const summaryDiv = doc.createElement('div');
+            summaryDiv.className = 'availability-summary-main'; // Reuse existing style
+            addInfoElement(doc, summaryDiv, 'h3', 'Availability Summary for Filtered Sites');
 
-        const summaryDiv = document.createElement('div');
-        summaryDiv.className = 'availability-summary-main'; // Reuse existing style
-        addInfoElement(document, summaryDiv, 'h3', 'Availability Summary for Filtered Sites');
+            if (availableInFiltered.length > 0) {
+                summaryDiv.style.backgroundColor = '#e6ffed'; // A light green for success
+                summaryDiv.style.border = '1px solid #28a745';
 
-        if (availableInFiltered.length > 0) {
-            summaryDiv.style.backgroundColor = '#e6ffed'; // A light green for success
-            summaryDiv.style.border = '1px solid #28a745';
+                const availableBySite = availableInFiltered.reduce((acc, row) => {
+                    if (!acc[row.site]) {
+                        acc[row.site] = [];
+                    }
+                    acc[row.site].push(row.date);
+                    return acc;
+                }, {});
 
-            const availableBySite = availableInFiltered.reduce((acc, row) => {
-                if (!acc[row.site]) {
-                    acc[row.site] = [];
-                }
-                acc[row.site].push(row.date);
-                return acc;
-            }, {});
-
-            const summaryList = document.createElement('ul');
-            summaryList.style.paddingLeft = '20px';
-            Object.keys(availableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
-                const dates = availableBySite[site].join(', ');
-                const li = document.createElement('li');
-                li.innerHTML = `<strong>${site}:</strong> ${dates}`;
-                summaryList.appendChild(li);
-            });
-            summaryDiv.appendChild(summaryList);
-        } else {
-            summaryDiv.style.backgroundColor = '#fff6f6'; // A light red for "not found"
-            summaryDiv.style.border = '1px solid #e0b4b4';
-            addInfoElement(document, summaryDiv, 'p', 'No "Available" or "Not Reservable" dates found for the sites in this list.');
+                const summaryList = doc.createElement('ul');
+                summaryList.style.paddingLeft = '20px';
+                Object.keys(availableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
+                    const dates = availableBySite[site].join(', ');
+                    const li = doc.createElement('li');
+                    li.innerHTML = `<strong>${site}:</strong> ${dates}`;
+                    summaryList.appendChild(li);
+                });
+                summaryDiv.appendChild(summaryList);
+            } else {
+                summaryDiv.style.backgroundColor = '#fff6f6'; // A light red for "not found"
+                summaryDiv.style.border = '1px solid #e0b4b4';
+                addInfoElement(doc, summaryDiv, 'p', 'No "Available" or "Not Reservable" dates found for the sites in this list.');
+            }
+            containerDiv.appendChild(summaryDiv);
         }
-        customHeaderElements.push(summaryDiv);
-    }
 
-    // --- Create main filter description header ---
-    const siteFilterText = isFilteringBySiteNumber ? `Displaying sites: ${siteNumbersToFilterArray.join(", ")}` : `Displaying all sites`;
-    let statusFilterDescription = "";
-    if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
-        statusFilterDescription = " (Showing All Statuses)";
-    } else if (availableOnlyConfig && notReservableOnlyConfig) {
-        statusFilterDescription = " (Showing 'Available' OR 'Not Reservable')";
-    } else if (availableOnlyConfig) {
-        statusFilterDescription = " (Showing 'Available' Only)";
-    } else if (notReservableOnlyConfig) {
-        statusFilterDescription = " (Showing 'Not Reservable' Only)";
-    }
-    const filterDescriptionHeader = document.createElement('h2');
-    filterDescriptionHeader.textContent = `${siteFilterText}${statusFilterDescription}`;
-    customHeaderElements.push(filterDescriptionHeader);
+        // --- Create main filter description header ---
+        const siteFilterText = isFilteringBySiteNumber ? `Displaying sites: ${siteNumbersToFilterArray.join(", ")}` : `Displaying all sites`;
+        let statusFilterDescription = "";
+        if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
+            statusFilterDescription = " (Showing All Statuses)";
+        } else if (availableOnlyConfig && notReservableOnlyConfig) {
+            statusFilterDescription = " (Showing 'Available' OR 'Not Reservable')";
+        } else if (availableOnlyConfig) {
+            statusFilterDescription = " (Showing 'Available' Only)";
+        } else if (notReservableOnlyConfig) {
+            statusFilterDescription = " (Showing 'Not Reservable' Only)";
+        }
+        const filterDescriptionHeader = doc.createElement('h2');
+        filterDescriptionHeader.textContent = `${siteFilterText}${statusFilterDescription}`;
+        containerDiv.appendChild(filterDescriptionHeader);
+    };
 
     const pageTitle = `Filtered Campsite Availability - ${config.api.campgroundId}`;
     const sortDescription = config.sorting.sortFilteredSitesBy === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
@@ -1659,7 +1670,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         pageTitle: pageTitle,
         dataRows: filteredRowsData,
         headers: ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"],
-        customHeaderElements: customHeaderElements, // Pass the array of custom headers
+        preTableRenderCallback: preTableRenderCallback,
         config: config,
         allCampsitesData: allCampsitesData,
         requestDateTime: requestDateTime,
@@ -2230,6 +2241,237 @@ function renderEventsSection(parentElement, eventsData, ids) {
 }
 
 /**
+ * Renders the booking window information on the main page.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {object|null} bookingInfo The `booking_information` object from the campground metadata.
+ */
+function renderBookingWindow(parentElement, bookingInfo) {
+    if (!bookingInfo?.booking_window_message) {
+        return;
+    }
+    const doc = parentElement.ownerDocument;
+    const container = doc.createElement('div');
+    container.className = 'info-section';
+    addInfoElement(doc, container, 'h3', 'Booking Window');
+    addInfoElement(doc, container, 'p', bookingInfo.booking_window_message);
+    parentElement.appendChild(container);
+}
+
+/**
+ * Renders a table of facility rates by season.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {Array<object>|null} feePolicies The `fee_policies` array from the campground metadata.
+ */
+function renderFacilityRates(parentElement, feePolicies) {
+    if (!feePolicies || feePolicies.length === 0) {
+        return;
+    }
+    const doc = parentElement.ownerDocument;
+    const container = doc.createElement('div');
+    container.className = 'info-section';
+    addInfoElement(doc, container, 'h3', 'Facility Rates');
+
+    const { tbody } = createTableStructure(doc, ["Season Dates", "Site Type", "Nightly/Daily Rates"], container);
+
+    feePolicies.forEach(policy => {
+        if (!policy.rates || policy.rates.length === 0) {
+            return; // Skip seasons with no rates (like 'Out of Season')
+        }
+        const seasonText = `<strong>${policy.season}</strong><br>${formatUTCDate(new Date(policy.start_date))} - ${formatUTCDate(new Date(policy.end_date))}`;
+
+        policy.rates.forEach((rate, index) => {
+            const tr = doc.createElement('tr');
+            if (index === 0) {
+                const seasonCell = tr.insertCell();
+                seasonCell.rowSpan = policy.rates.length;
+                seasonCell.innerHTML = seasonText;
+            }
+            tr.insertCell().textContent = rate.site_type;
+            tr.insertCell().textContent = `$${parseFloat(rate.cost).toFixed(2)}`;
+            tbody.appendChild(tr);
+        });
+    });
+    parentElement.appendChild(container);
+}
+
+/**
+ * Renders a table of reservation rules.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {object} metadata The full `campgroundMetadata` object.
+ */
+function renderReservationRules(parentElement, metadata) {
+    const doc = parentElement.ownerDocument;
+    const rulesToRender = [];
+
+    // Case 1: The ideal, simple array format under the 'rules' key.
+    if (metadata.rules && Array.isArray(metadata.rules) && metadata.rules.length > 0) {
+        metadata.rules.forEach(rule => {
+            rulesToRender.push({ name: rule.name, description: rule.description });
+        });
+    }
+    // Case 2: The object-based format under the 'facility_rules' key.
+    else if (metadata.facility_rules && typeof metadata.facility_rules === 'object') {
+        const facilityRules = metadata.facility_rules;
+        const toTitleCase = (str) => str.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
+
+        for (const key in facilityRules) {
+            const rule = facilityRules[key];
+            let description = rule.description || '';
+
+            // Construct a more human-readable description if one isn't provided.
+            if (!description && rule.value) {
+                switch (key) {
+                    case 'maxConsecutiveStay':
+                        description = `You may stay up to ${rule.value} ${rule.units || 'nights'} during a visit.`;
+                        break;
+                    case 'minConsecutiveStay':
+                        description = `You must stay at least ${rule.value} ${rule.units || 'night(s)'} to book a visit.`;
+                        break;
+                    case 'minHolidayWeekendStay':
+                        description = `A minimum stay of ${rule.value} nights is required on holiday weekends.`;
+                        break;
+                    case 'minWeekendStay':
+                        description = `A minimum stay of ${rule.value} nights is required on weekends.`;
+                        break;
+                    case 'reservationCutOff':
+                        description = `Reservations must be made at least ${rule.value} day(s) in advance.`;
+                        break;
+                    default:
+                        description = `A value of ${rule.value} ${rule.units || ''} applies.`.trim();
+                }
+            }
+            rulesToRender.push({ name: toTitleCase(key), description });
+        }
+    }
+
+    if (rulesToRender.length === 0) {
+        return;
+    }
+
+    const container = doc.createElement('div');
+    container.className = 'info-section';
+    addInfoElement(doc, container, 'h3', 'Reservation Rules');
+
+    const { tbody } = createTableStructure(doc, ["Rule Name", "Description"], container);
+
+    rulesToRender.forEach(rule => {
+        const tr = doc.createElement('tr');
+        tr.insertCell().textContent = rule.name;
+        tr.insertCell().textContent = rule.description;
+        tbody.appendChild(tr);
+    });
+    parentElement.appendChild(container);
+}
+
+/**
+ * Renders a list of important notices.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {Array<object>|null} notices The `notices` array from the campground metadata.
+ */
+function renderNotices(parentElement, notices) {
+    if (!notices || notices.length === 0) {
+        return;
+    }
+    const doc = parentElement.ownerDocument;
+    const container = doc.createElement('div');
+    container.className = 'info-section notices-section';
+    addInfoElement(doc, container, 'h3', 'Important Notices');
+
+    notices.forEach(notice => {
+        if (notice.notice_text) {
+            const noticeDiv = doc.createElement('div');
+            noticeDiv.className = `notice-item notice-${notice.notice_type || 'info'}`; // e.g., notice-warning
+            noticeDiv.innerHTML = notice.notice_text; // Use innerHTML as notices can contain HTML tags
+            container.appendChild(noticeDiv);
+        }
+    });
+    parentElement.appendChild(container);
+}
+
+/**
+ * Renders a list of related links.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {Array<object>|null} links The `links` array from the campground metadata.
+ */
+function renderLinks(parentElement, links) {
+    if (!links || links.length === 0) {
+        return;
+    }
+    const doc = parentElement.ownerDocument;
+    const container = doc.createElement('div');
+    container.className = 'info-section';
+    addInfoElement(doc, container, 'h3', 'Related Links');
+
+    const ul = doc.createElement('ul');
+    links.forEach(link => {
+        if (link.url && link.title) {
+            const li = doc.createElement('li');
+            const a = doc.createElement('a');
+            a.href = link.url;
+            a.textContent = link.title;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            li.appendChild(a);
+            if (link.description) {
+                li.append(` - ${link.description}`);
+            }
+            ul.appendChild(li);
+        }
+    });
+    container.appendChild(ul);
+    parentElement.appendChild(container);
+}
+
+/**
+ * Renders a list of available activities.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {Array<object>|null} activities The `activities` array from the campground metadata.
+ */
+function renderActivities(parentElement, activities) {
+    if (!activities || activities.length === 0) {
+        return;
+    }
+    const doc = parentElement.ownerDocument;
+    const container = doc.createElement('div');
+    container.className = 'info-section';
+    addInfoElement(doc, container, 'h3', 'Activities');
+
+    const activityNames = activities.map(act => act.activity_name).filter(Boolean).join(', ');
+    addInfoElement(doc, container, 'p', activityNames);
+    parentElement.appendChild(container);
+}
+
+/**
+ * Renders the facility's address.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {Array<object>|null} addresses The `addresses` array from the campground metadata.
+ */
+function renderAddresses(parentElement, addresses) {
+    if (!addresses || addresses.length === 0) {
+        return;
+    }
+    const doc = parentElement.ownerDocument;
+    const container = doc.createElement('div');
+    container.className = 'info-section';
+    addInfoElement(doc, container, 'h3', 'Address');
+
+    addresses.forEach(address => {
+        const addressParts = [
+            address.address1,
+            address.address2,
+            address.address3,
+            address.city,
+            address.state_code,
+            address.postal_code
+        ].filter(Boolean).join(', ');
+
+        if (addressParts) {
+            addInfoElement(doc, container, 'p', addressParts);
+        }
+    });
+    parentElement.appendChild(container);
+}
+/**
  * Renders the main, comprehensive availability data table on the primary page.
  * @param {HTMLElement} parentElement The DOM element to append the table to.
  * @param {object} campsites The combined campsites data object.
@@ -2304,7 +2546,7 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
  * @param {object} config The script's configuration object.
  * @param {IdCollection} ids An object containing all relevant IDs.
  */
-function renderMainPage(containerElement, facilityDetails, recAreaDetails, eventsData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids) {
+function renderMainPage(containerElement, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids) {
     if (typeof document === 'undefined' || !containerElement) {
         console.warn("Main page container element not found or document not available. Skipping main page DOM updates.");
         return;
@@ -2366,6 +2608,48 @@ function renderMainPage(containerElement, facilityDetails, recAreaDetails, event
             recGovLink.appendChild(link);
         }
         containerElement.appendChild(fallbackDiv);
+    }
+
+    // --- Section 1.5: Render Booking Window, Rates, and Rules from campground metadata ---
+    if (campgroundMetadata) {
+        const infoContainer = document.createElement('div');
+        infoContainer.className = 'additional-info-container';
+
+        // --- Debug logging for metadata sections ---
+        // This helps diagnose why sections might not render by explicitly stating if the data was found.
+        debugInfo.rendering.mainPageRenderStatus.bookingWindow = campgroundMetadata.booking_information ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.facilityRates = campgroundMetadata.fee_policies ? 'DATA_FOUND' : 'DATA_MISSING';
+        if (campgroundMetadata.rules && Array.isArray(campgroundMetadata.rules) && campgroundMetadata.rules.length > 0) {
+            debugInfo.rendering.mainPageRenderStatus.reservationRules = 'FOUND_RULES_ARRAY';
+        } else if (campgroundMetadata.facility_rules && typeof campgroundMetadata.facility_rules === 'object') {
+            debugInfo.rendering.mainPageRenderStatus.reservationRules = 'FOUND_FACILITY_RULES_OBJECT';
+        } else {
+            debugInfo.rendering.mainPageRenderStatus.reservationRules = 'DATA_MISSING';
+        }
+        debugInfo.rendering.mainPageRenderStatus.notices = (campgroundMetadata.notices && campgroundMetadata.notices.length > 0) ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.links = (campgroundMetadata.links && campgroundMetadata.links.length > 0) ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.activities = (campgroundMetadata.activities && campgroundMetadata.activities.length > 0) ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.addresses = (campgroundMetadata.addresses && campgroundMetadata.addresses.length > 0) ? 'DATA_FOUND' : 'DATA_MISSING';
+
+        renderBookingWindow(infoContainer, campgroundMetadata.booking_information);
+        renderFacilityRates(infoContainer, campgroundMetadata.fee_policies);
+        renderReservationRules(infoContainer, campgroundMetadata);
+        renderNotices(infoContainer, campgroundMetadata.notices);
+        renderLinks(infoContainer, campgroundMetadata.links);
+        renderActivities(infoContainer, campgroundMetadata.activities);
+        renderAddresses(infoContainer, campgroundMetadata.addresses);
+
+        // Append the container with all the new sections to the main results container
+        containerElement.appendChild(infoContainer);
+    } else {
+        // Log that the entire metadata object was missing, which explains why all related sections are absent.
+        debugInfo.rendering.mainPageRenderStatus.bookingWindow = 'METADATA_OBJECT_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.facilityRates = 'METADATA_OBJECT_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.reservationRules = 'METADATA_OBJECT_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.notices = 'METADATA_OBJECT_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.links = 'METADATA_OBJECT_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.activities = 'METADATA_OBJECT_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.addresses = 'METADATA_OBJECT_MISSING';
     }
 
     // --- Section 2: Render Date Range, Summary, and Loop Info ---

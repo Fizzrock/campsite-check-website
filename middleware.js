@@ -10,6 +10,12 @@
  * 5. If the code is incorrect or missing, it blocks the request with an "Access Denied" message.
  */
 export default function middleware(request) {
+  // In a local development environment (`vercel dev`), you can bypass this check for convenience.
+  // This will not affect your deployed preview or production sites.
+  if (process.env.NODE_ENV === 'development') {
+    return; // Allow request to proceed without checking the access code.
+  }
+
   const url = new URL(request.url);
 
   // Allow static assets

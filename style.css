@@ -277,3 +277,25 @@ td:nth-child(6) {
     margin: 5px 0;
     color: #555;
 }
+
+.notices-section {
+    background-color: #fffbe6; /* Light yellow background */
+    border: 1px solid #ffeeba; /* Yellow border */
+    border-radius: 4px;
+    padding: 15px;
+}
+
+.notices-section h3 {
+    color: #856404; /* Dark yellow text for the header */
+    margin-top: 0;
+}
+
+.notice-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-left: 4px solid #ffc107; /* A solid left border for emphasis */
+}
+
+.notice-item:last-child {
+    margin-bottom: 0;
+}
