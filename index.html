@@ -69,6 +69,28 @@
             </div>
         </fieldset>
 
+        <!-- Tab Behavior Options -->
+        <fieldset>
+            <legend>Tab Behavior Options</legend>
+            <div class="form-grid">
+                <label for="includeNotReservableInAvailableTab">Available Sites Tab:</label>
+                <label class="checkbox-label-inline"><input type="checkbox" id="includeNotReservableInAvailableTab" name="includeNotReservableInAvailableTab"> Include 'Not Reservable'</label>
+
+                <label for="filteredSitesTableContent">Filtered Sites Table Content:</label>
+                <select id="filteredSitesTableContent" name="filteredSitesTableContent">
+                    <option value="available_or_not_reservable">Show 'Available' & 'Not Reservable'</option>
+                    <option value="available_only">Show 'Available' Only</option>
+                    <option value="all">Show All Statuses</option>
+                </select>
+
+                <label for="filteredSitesDetailFetch">Fetch Details For:</label>
+                <select id="filteredSitesDetailFetch" name="filteredSitesDetailFetch">
+                    <option value="all_filtered">All sites in my filter list</option>
+                    <option value="only_available">Only sites that have available dates</option>
+                </select>
+            </div>
+        </fieldset>
+
         <!-- Action Buttons -->
         <div class="button-container">
             <button type="submit">Run Availability Check</button>

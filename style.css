@@ -194,6 +194,12 @@ td:nth-child(6) {
     font-size: 0.9em;
 }
 
+.checkbox-label-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px; /* Space between checkbox and text */
+}
+
 .button-container {
     text-align: center;
     margin-top: 20px;

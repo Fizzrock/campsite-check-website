@@ -1611,56 +1611,55 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 
     // 4. Configure and call the generic renderer.
     const preTableRenderCallback = (doc, containerDiv) => {
-        // --- Create Availability Summary if showing all statuses ---
-        if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
-            const availableInFiltered = filteredRowsData.filter(
-                row => row.availability === AVAILABILITY_STATUS.AVAILABLE || row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE
-            );
+        // --- Create Availability Summary ---
+        const availableInFiltered = filteredRowsData.filter(
+            row => row.availability === AVAILABILITY_STATUS.AVAILABLE || row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE
+        );
 
-            const summaryDiv = doc.createElement('div');
-            summaryDiv.className = 'availability-summary-main'; // Reuse existing style
-            addInfoElement(doc, summaryDiv, 'h3', 'Availability Summary for Filtered Sites');
+        const summaryDiv = doc.createElement('div');
+        summaryDiv.className = 'availability-summary-main'; // Reuse existing style
+        addInfoElement(doc, summaryDiv, 'h3', 'Availability Summary for Filtered Sites');
 
-            if (availableInFiltered.length > 0) {
-                summaryDiv.style.backgroundColor = '#e6ffed'; // A light green for success
-                summaryDiv.style.border = '1px solid #28a745';
+        if (availableInFiltered.length > 0) {
+            summaryDiv.style.backgroundColor = '#e6ffed'; // A light green for success
+            summaryDiv.style.border = '1px solid #28a745';
 
-                const availableBySite = availableInFiltered.reduce((acc, row) => {
-                    if (!acc[row.site]) {
-                        acc[row.site] = [];
-                    }
-                    acc[row.site].push(row.date);
-                    return acc;
-                }, {});
+            const availableBySite = availableInFiltered.reduce((acc, row) => {
+                if (!acc[row.site]) {
+                    acc[row.site] = [];
+                }
+                acc[row.site].push(row.date);
+                return acc;
+            }, {});
 
-                const summaryList = doc.createElement('ul');
-                summaryList.style.paddingLeft = '20px';
-                Object.keys(availableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
-                    const dates = availableBySite[site].join(', ');
-                    const li = doc.createElement('li');
-                    li.innerHTML = `<strong>${site}:</strong> ${dates}`;
-                    summaryList.appendChild(li);
-                });
-                summaryDiv.appendChild(summaryList);
-            } else {
-                summaryDiv.style.backgroundColor = '#fff6f6'; // A light red for "not found"
-                summaryDiv.style.border = '1px solid #e0b4b4';
-                addInfoElement(doc, summaryDiv, 'p', 'No "Available" or "Not Reservable" dates found for the sites in this list.');
-            }
-            containerDiv.appendChild(summaryDiv);
+            const summaryList = doc.createElement('ul');
+            summaryList.style.paddingLeft = '20px';
+            Object.keys(availableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
+                const dates = availableBySite[site].join(', ');
+                const li = doc.createElement('li');
+                li.innerHTML = `<strong>${site}:</strong> ${dates}`;
+                summaryList.appendChild(li);
+            });
+            summaryDiv.appendChild(summaryList);
+        } else {
+            summaryDiv.style.backgroundColor = '#fff6f6'; // A light red for "not found"
+            summaryDiv.style.border = '1px solid #e0b4b4';
+            addInfoElement(doc, summaryDiv, 'p', 'No "Available" or "Not Reservable" dates found for the sites in this list.');
         }
+        containerDiv.appendChild(summaryDiv);
 
         // --- Create main filter description header ---
         const siteFilterText = isFilteringBySiteNumber ? `Displaying sites: ${siteNumbersToFilterArray.join(", ")}` : `Displaying all sites`;
         let statusFilterDescription = "";
         if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
             statusFilterDescription = " (Showing All Statuses)";
-        } else if (availableOnlyConfig && notReservableOnlyConfig) {
-            statusFilterDescription = " (Showing 'Available' OR 'Not Reservable')";
         } else if (availableOnlyConfig) {
-            statusFilterDescription = " (Showing 'Available' Only)";
+            statusFilterDescription = notReservableOnlyConfig ? " (Showing 'Available' OR 'Not Reservable')" : " (Showing 'Available' Only)";
         } else if (notReservableOnlyConfig) {
             statusFilterDescription = " (Showing 'Not Reservable' Only)";
+        } else {
+            // This case is hit when both flags are false, meaning the user wants to see all statuses.
+            statusFilterDescription = " (Showing All Statuses)";
         }
         const filterDescriptionHeader = doc.createElement('h2');
         filterDescriptionHeader.textContent = `${siteFilterText}${statusFilterDescription}`;
@@ -2869,6 +2868,34 @@ function buildConfigFromForm() {
     // Update sorting preferences
     newConfig.sorting.sortFilteredSitesBy = document.getElementById('sortFilteredSitesBy').value;
 
+    // Update tab behavior preferences
+    const behavior = newConfig.tabBehavior;
+    behavior.includeNotReservableInAvailableTab = document.getElementById('includeNotReservableInAvailableTab').checked;
+
+    // Logic for 'Filtered Sites Table Content'
+    const tableContent = document.getElementById('filteredSitesTableContent').value;
+    switch (tableContent) {
+        case 'available_or_not_reservable':
+            behavior.showFilteredSitesAvailableOnly = true;
+            behavior.showFilteredSitesNotReservableOnly = true;
+            break;
+        case 'available_only':
+            behavior.showFilteredSitesAvailableOnly = true;
+            behavior.showFilteredSitesNotReservableOnly = false;
+            break;
+        case 'all':
+            behavior.showFilteredSitesAvailableOnly = false;
+            behavior.showFilteredSitesNotReservableOnly = false;
+            break;
+    }
+
+    // Logic for 'Fetch Details For'
+    const detailFetch = document.getElementById('filteredSitesDetailFetch').value;
+    behavior.fetchDetailsForAllFilteredSites = (detailFetch === 'all_filtered');
+    // When not fetching for all, set the specific flags based on the 'only_available' choice.
+    behavior.fetchDetailsForAvailableFilteredSites = true;
+    behavior.fetchDetailsForNotReservableFilteredSites = (detailFetch !== 'only_available');
+
     return newConfig;
 }
 
@@ -2935,6 +2962,11 @@ function handleCopyLink() {
 
     // Add sorting parameters
     if (dynamicConfig.sorting.sortFilteredSitesBy) params.append('sortFilteredSitesBy', dynamicConfig.sorting.sortFilteredSitesBy);
+
+    // Add tab behavior parameters from the UI controls
+    params.append('includeNotReservableInAvailableTab', document.getElementById('includeNotReservableInAvailableTab').checked);
+    params.append('filteredSitesTableContent', document.getElementById('filteredSitesTableContent').value);
+    params.append('filteredSitesDetailFetch', document.getElementById('filteredSitesDetailFetch').value);
 
     const finalUrl = `${baseUrl}?${params.toString()}`;
 
@@ -3036,6 +3068,34 @@ async function initializePage() {
 
     // Handle sorting flags from the URL
     initialConfig.sorting.sortFilteredSitesBy = urlParams.get('sortFilteredSitesBy') || initialConfig.sorting.sortFilteredSitesBy;
+
+    // Handle tab behavior flags from the URL
+    if (urlParams.has('includeNotReservableInAvailableTab')) {
+        initialConfig.tabBehavior.includeNotReservableInAvailableTab = urlParams.get('includeNotReservableInAvailableTab') === 'true';
+    }
+
+    const tableContentFromUrl = urlParams.get('filteredSitesTableContent');
+    if (tableContentFromUrl) {
+        switch (tableContentFromUrl) {
+            case 'available_or_not_reservable':
+                initialConfig.tabBehavior.showFilteredSitesAvailableOnly = true;
+                initialConfig.tabBehavior.showFilteredSitesNotReservableOnly = true;
+                break;
+            case 'available_only':
+                initialConfig.tabBehavior.showFilteredSitesAvailableOnly = true;
+                initialConfig.tabBehavior.showFilteredSitesNotReservableOnly = false;
+                break;
+            case 'all':
+                initialConfig.tabBehavior.showFilteredSitesAvailableOnly = false;
+                initialConfig.tabBehavior.showFilteredSitesNotReservableOnly = false;
+                break;
+        }
+    }
+
+    const detailFetchFromUrl = urlParams.get('filteredSitesDetailFetch');
+    if (detailFetchFromUrl) {
+        initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = (detailFetchFromUrl === 'all_filtered');
+    }
 
     // 2. Populate the form with the determined initial configuration
     populateFormFromConfig(initialConfig);
