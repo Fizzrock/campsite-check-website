@@ -1436,9 +1436,10 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                 for (const dateStr in campsite.availabilities) {
                     const currentAvailability = campsite.availabilities[dateStr];
                     let includeRow;
-                    if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
+
+                    if (!availableOnlyConfig && !notReservableOnlyConfig) { // Case for "Show All Statuses"
                         includeRow = true;
-                    } else if (availableOnlyConfig && notReservableOnlyConfig) {
+                    } else if (availableOnlyConfig && notReservableOnlyConfig) { // Case for "Available & Not Reservable"
                         includeRow = (currentAvailability === AVAILABILITY_STATUS.AVAILABLE || currentAvailability === AVAILABILITY_STATUS.NOT_RESERVABLE);
                     } else if (availableOnlyConfig) {
                         includeRow = (currentAvailability === AVAILABILITY_STATUS.AVAILABLE);
@@ -1601,8 +1602,12 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                 const availableDates = filteredRowsData
                     .filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.AVAILABLE)
                     .map(row => row.date);
+                // Find all "Not Reservable" dates for this specific campsite.
+                const notReservableDates = filteredRowsData
+                    .filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE)
+                    .map(row => row.date);
 
-                renderCampsiteDetailsInTab(campsiteDetails, availableDates, containerDiv, doc);
+                renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, containerDiv, doc);
             } else if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value)) {
                 console.warn("[displayFilteredSitesInNewTab] Failed to fetch or no data for a campsite detail:", result.reason || "No data returned");
             }
@@ -1611,20 +1616,26 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 
     // 4. Configure and call the generic renderer.
     const preTableRenderCallback = (doc, containerDiv) => {
-        // --- Create Availability Summary ---
-        const availableInFiltered = filteredRowsData.filter(
-            row => row.availability === AVAILABILITY_STATUS.AVAILABLE || row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE
+        // --- Create Summaries for Available and Not Reservable Dates ---
+
+        // 1. Separate the data sources
+        const availableRows = filteredRowsData.filter(
+            row => row.availability === AVAILABILITY_STATUS.AVAILABLE
         );
 
-        const summaryDiv = doc.createElement('div');
-        summaryDiv.className = 'availability-summary-main'; // Reuse existing style
-        addInfoElement(doc, summaryDiv, 'h3', 'Availability Summary for Filtered Sites');
+        const notReservableRows = filteredRowsData.filter(
+            row => row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE
+        );
 
-        if (availableInFiltered.length > 0) {
+        // 2. Render the "Available" summary box, if applicable
+        if (availableRows.length > 0) {
+            const summaryDiv = doc.createElement('div');
+            summaryDiv.className = 'availability-summary-main';
+            addInfoElement(doc, summaryDiv, 'h3', 'Available Summary for Filtered Sites');
             summaryDiv.style.backgroundColor = '#e6ffed'; // A light green for success
             summaryDiv.style.border = '1px solid #28a745';
 
-            const availableBySite = availableInFiltered.reduce((acc, row) => {
+            const availableBySite = availableRows.reduce((acc, row) => {
                 if (!acc[row.site]) {
                     acc[row.site] = [];
                 }
@@ -1641,24 +1652,49 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                 summaryList.appendChild(li);
             });
             summaryDiv.appendChild(summaryList);
-        } else {
-            summaryDiv.style.backgroundColor = '#fff6f6'; // A light red for "not found"
-            summaryDiv.style.border = '1px solid #e0b4b4';
-            addInfoElement(doc, summaryDiv, 'p', 'No "Available" or "Not Reservable" dates found for the sites in this list.');
+            containerDiv.appendChild(summaryDiv);
         }
-        containerDiv.appendChild(summaryDiv);
+
+        // 3. Render the "Not Reservable" summary box, if applicable
+        if (notReservableRows.length > 0) {
+            const summaryDiv = doc.createElement('div');
+            summaryDiv.className = 'availability-summary-main';
+            addInfoElement(doc, summaryDiv, 'h3', 'Not Reservable Summary for Filtered Sites');
+            summaryDiv.style.backgroundColor = '#fffbe6'; // Light yellow
+            summaryDiv.style.border = '1px solid #ffeeba'; // Yellow border
+            summaryDiv.style.marginTop = '10px'; // Add space between summaries
+
+            const notReservableBySite = notReservableRows.reduce((acc, row) => {
+                if (!acc[row.site]) {
+                    acc[row.site] = [];
+                }
+                acc[row.site].push(row.date);
+                return acc;
+            }, {});
+
+            const summaryList = doc.createElement('ul');
+            summaryList.style.paddingLeft = '20px';
+            Object.keys(notReservableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
+                const dates = notReservableBySite[site].join(', ');
+                const li = doc.createElement('li');
+                li.innerHTML = `<strong>${site}:</strong> ${dates}`;
+                summaryList.appendChild(li);
+            });
+            summaryDiv.appendChild(summaryList);
+            containerDiv.appendChild(summaryDiv);
+        }
 
         // --- Create main filter description header ---
         const siteFilterText = isFilteringBySiteNumber ? `Displaying sites: ${siteNumbersToFilterArray.join(", ")}` : `Displaying all sites`;
         let statusFilterDescription = "";
-        if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
+        if (!availableOnlyConfig && !notReservableOnlyConfig) {
             statusFilterDescription = " (Showing All Statuses)";
         } else if (availableOnlyConfig) {
             statusFilterDescription = notReservableOnlyConfig ? " (Showing 'Available' OR 'Not Reservable')" : " (Showing 'Available' Only)";
         } else if (notReservableOnlyConfig) {
             statusFilterDescription = " (Showing 'Not Reservable' Only)";
         } else {
-            // This case is hit when both flags are false, meaning the user wants to see all statuses.
+            // This case should not be hit with the new UI, but as a fallback:
             statusFilterDescription = " (Showing All Statuses)";
         }
         const filterDescriptionHeader = doc.createElement('h2');
@@ -1808,18 +1844,20 @@ function displayDebugInfoInNewTab(debugData) {
  * This includes attributes, permitted equipment, and a media gallery.
  * @param {object} campsiteDetails The detailed data for one campsite from the RIDB API.
  * @param {Array<string>} availableDates An array of date strings when this site is "Available".
+ * @param {Array<string>} notReservableDates An array of date strings when this site is "Not Reservable".
  * @param {HTMLElement} parentElement The parent element to append the details to.
  * @param {Document} [doc=document] The document object where rendering occurs.
  */
-function renderCampsiteDetailsInTab(campsiteDetails, availableDates, parentElement, doc = document) {
+function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, parentElement, doc = document) {
     if (!campsiteDetails) return;
 
     const detailDiv = doc.createElement('div');
     detailDiv.className = 'campsite-specific-details';
     detailDiv.style.border = "1px solid #eee";
-    detailDiv.style.padding = "10px";
+    detailDiv.style.padding = "15px";
     detailDiv.style.marginBottom = "15px";
     detailDiv.style.backgroundColor = "#f9f9f9";
+    detailDiv.style.borderRadius = '4px';
 
     const isAvailable = availableDates && availableDates.length > 0;
 
@@ -1832,6 +1870,19 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, parentEleme
         availableDiv.style.borderRadius = '4px';
         addInfoElement(doc, availableDiv, 'p', '').innerHTML = `<strong>Available on:</strong> ${availableDates.join(', ')}`;
         detailDiv.appendChild(availableDiv);
+    }
+
+    const isNotReservable = notReservableDates && notReservableDates.length > 0;
+
+    if (isNotReservable) {
+        const notReservableDiv = doc.createElement('div');
+        notReservableDiv.style.backgroundColor = '#fffbe6'; // Light yellow, consistent with notices
+        notReservableDiv.style.border = '1px solid #ffeeba'; // Yellow border
+        notReservableDiv.style.padding = '10px';
+        notReservableDiv.style.marginBottom = '10px';
+        notReservableDiv.style.borderRadius = '4px';
+        addInfoElement(doc, notReservableDiv, 'p', '').innerHTML = `<strong>Not Reservable on:</strong> ${notReservableDates.join(', ')}`;
+        detailDiv.appendChild(notReservableDiv);
     }
 
     const titleHeader = addInfoElement(doc, detailDiv, 'h3', `Site ${campsiteDetails.CampsiteName} (ID: ${campsiteDetails.CampsiteID})`);
@@ -2838,6 +2889,35 @@ function populateFormFromConfig(configObject) {
             }
         }
     }
+
+    if (configObject.sorting) {
+        if (configObject.sorting.sortFilteredSitesBy) {
+            document.getElementById('sortFilteredSitesBy').value = configObject.sorting.sortFilteredSitesBy;
+        }
+    }
+
+    if (configObject.tabBehavior) {
+        const behavior = configObject.tabBehavior;
+        document.getElementById('includeNotReservableInAvailableTab').checked = behavior.includeNotReservableInAvailableTab;
+
+        // Logic to set the 'Filtered Sites Table Content' dropdown
+        if (!behavior.showFilteredSitesAvailableOnly && !behavior.showFilteredSitesNotReservableOnly) {
+            document.getElementById('filteredSitesTableContent').value = 'all';
+        } else if (behavior.showFilteredSitesAvailableOnly && !behavior.showFilteredSitesNotReservableOnly) {
+            document.getElementById('filteredSitesTableContent').value = 'available_only';
+        } else { // Default case: both are true
+            document.getElementById('filteredSitesTableContent').value = 'available_or_not_reservable';
+        }
+
+        // Logic to set the 'Fetch Details For' dropdown
+        if (behavior.fetchDetailsForAllFilteredSites) {
+            document.getElementById('filteredSitesDetailFetch').value = 'all_filtered';
+        } else if (behavior.fetchDetailsForAvailableFilteredSites && behavior.fetchDetailsForNotReservableFilteredSites) {
+            document.getElementById('filteredSitesDetailFetch').value = 'available_or_not_reservable';
+        } else {
+            document.getElementById('filteredSitesDetailFetch').value = 'only_available';
+        }
+    }
 }
 
 /**
@@ -2891,10 +2971,24 @@ function buildConfigFromForm() {
 
     // Logic for 'Fetch Details For'
     const detailFetch = document.getElementById('filteredSitesDetailFetch').value;
-    behavior.fetchDetailsForAllFilteredSites = (detailFetch === 'all_filtered');
-    // When not fetching for all, set the specific flags based on the 'only_available' choice.
-    behavior.fetchDetailsForAvailableFilteredSites = true;
-    behavior.fetchDetailsForNotReservableFilteredSites = (detailFetch !== 'only_available');
+    switch (detailFetch) {
+        case 'all_filtered':
+            behavior.fetchDetailsForAllFilteredSites = true;
+            // The other two flags don't matter when the master flag is true, but we can set them for consistency.
+            behavior.fetchDetailsForAvailableFilteredSites = true;
+            behavior.fetchDetailsForNotReservableFilteredSites = true;
+            break;
+        case 'available_or_not_reservable':
+            behavior.fetchDetailsForAllFilteredSites = false;
+            behavior.fetchDetailsForAvailableFilteredSites = true;
+            behavior.fetchDetailsForNotReservableFilteredSites = true;
+            break;
+        case 'only_available':
+            behavior.fetchDetailsForAllFilteredSites = false;
+            behavior.fetchDetailsForAvailableFilteredSites = true;
+            behavior.fetchDetailsForNotReservableFilteredSites = false;
+            break;
+    }
 
     return newConfig;
 }
@@ -3094,7 +3188,23 @@ async function initializePage() {
 
     const detailFetchFromUrl = urlParams.get('filteredSitesDetailFetch');
     if (detailFetchFromUrl) {
-        initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = (detailFetchFromUrl === 'all_filtered');
+        switch (detailFetchFromUrl) {
+            case 'all_filtered':
+                initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = true;
+                initialConfig.tabBehavior.fetchDetailsForAvailableFilteredSites = true;
+                initialConfig.tabBehavior.fetchDetailsForNotReservableFilteredSites = true;
+                break;
+            case 'available_or_not_reservable':
+                initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = false;
+                initialConfig.tabBehavior.fetchDetailsForAvailableFilteredSites = true;
+                initialConfig.tabBehavior.fetchDetailsForNotReservableFilteredSites = true;
+                break;
+            case 'only_available':
+                initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = false;
+                initialConfig.tabBehavior.fetchDetailsForAvailableFilteredSites = true;
+                initialConfig.tabBehavior.fetchDetailsForNotReservableFilteredSites = false;
+                break;
+        }
     }
 
     // 2. Populate the form with the determined initial configuration
