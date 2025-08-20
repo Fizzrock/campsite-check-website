@@ -57,6 +57,18 @@
             </div>
         </fieldset>
 
+        <!-- Sorting Options -->
+        <fieldset>
+            <legend>Sorting Options</legend>
+            <div class="form-grid">
+                <label for="sortFilteredSitesBy">Filtered Sites Tab Sort:</label>
+                <select id="sortFilteredSitesBy" name="sortFilteredSitesBy">
+                    <option value="date">Date, then Site</option>
+                    <option value="site">Site, then Date</option>
+                </select>
+            </div>
+        </fieldset>
+
         <!-- Action Buttons -->
         <div class="button-container">
             <button type="submit">Run Availability Check</button>
@@ -66,9 +78,9 @@
 
     <hr>
 
-    <div id="live-debug-panel" style="display: none;">
+    <!-- <div id="live-debug-panel" style="display: none;">
         <h3>Live Debug Panel</h3>
-    </div>
+    </div> -->
 
     <div id="results-container"></div>
     <script src="campgroundAvailability.js"></script>

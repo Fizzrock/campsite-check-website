@@ -1596,7 +1596,13 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 
         allDetailsResults.forEach(result => {
             if (result.status === 'fulfilled' && result.value) {
-                renderCampsiteDetailsInTab(result.value, containerDiv, doc);
+                const campsiteDetails = result.value;
+                // Find all "Available" dates for this specific campsite from the table data.
+                const availableDates = filteredRowsData
+                    .filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.AVAILABLE)
+                    .map(row => row.date);
+
+                renderCampsiteDetailsInTab(campsiteDetails, availableDates, containerDiv, doc);
             } else if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value)) {
                 console.warn("[displayFilteredSitesInNewTab] Failed to fetch or no data for a campsite detail:", result.reason || "No data returned");
             }
@@ -1802,10 +1808,11 @@ function displayDebugInfoInNewTab(debugData) {
  * Renders a detailed block for a single campsite within a parent element.
  * This includes attributes, permitted equipment, and a media gallery.
  * @param {object} campsiteDetails The detailed data for one campsite from the RIDB API.
+ * @param {Array<string>} availableDates An array of date strings when this site is "Available".
  * @param {HTMLElement} parentElement The parent element to append the details to.
  * @param {Document} [doc=document] The document object where rendering occurs.
  */
-function renderCampsiteDetailsInTab(campsiteDetails, parentElement, doc = document) {
+function renderCampsiteDetailsInTab(campsiteDetails, availableDates, parentElement, doc = document) {
     if (!campsiteDetails) return;
 
     const detailDiv = doc.createElement('div');
@@ -1815,7 +1822,23 @@ function renderCampsiteDetailsInTab(campsiteDetails, parentElement, doc = docume
     detailDiv.style.marginBottom = "15px";
     detailDiv.style.backgroundColor = "#f9f9f9";
 
-    addInfoElement(doc, detailDiv, 'h3', `Site ${campsiteDetails.CampsiteName} (ID: ${campsiteDetails.CampsiteID})`);
+    const isAvailable = availableDates && availableDates.length > 0;
+
+    if (isAvailable) {
+        const availableDiv = doc.createElement('div');
+        availableDiv.style.backgroundColor = '#e6ffed';
+        availableDiv.style.border = '1px solid #28a745';
+        availableDiv.style.padding = '10px';
+        availableDiv.style.marginBottom = '10px';
+        availableDiv.style.borderRadius = '4px';
+        addInfoElement(doc, availableDiv, 'p', '').innerHTML = `<strong>Available on:</strong> ${availableDates.join(', ')}`;
+        detailDiv.appendChild(availableDiv);
+    }
+
+    const titleHeader = addInfoElement(doc, detailDiv, 'h3', `Site ${campsiteDetails.CampsiteName} (ID: ${campsiteDetails.CampsiteID})`);
+    if (isAvailable && titleHeader) {
+        titleHeader.style.color = '#28a745'; // Green color for available sites
+    }
 
     // Check if the details are "rich" (have attributes or media). If not, display a warning.
     const hasRichDetails = (campsiteDetails.ATTRIBUTES && campsiteDetails.ATTRIBUTES.length > 0) ||
@@ -2471,6 +2494,34 @@ function renderAddresses(parentElement, addresses) {
     });
     parentElement.appendChild(container);
 }
+
+/**
+ * Renders other miscellaneous details from the campground metadata.
+ * @param {HTMLElement} parentElement The DOM element to append the section to.
+ * @param {object} metadata The full `campgroundMetadata` object.
+ */
+function renderOtherMetadata(parentElement, metadata) {
+    const doc = parentElement.ownerDocument;
+    const container = doc.createElement('div');
+    container.className = 'info-section';
+
+    const addDetail = (label, value) => {
+        // Check for undefined, null, or empty string
+        if (value === undefined || value === null || value.toString().trim() === "") return;
+
+        // Add the 'h3' header only if we are about to add the first detail.
+        if (container.children.length === 0) {
+            addInfoElement(doc, container, 'h3', 'Additional Details');
+        }
+        const p = addInfoElement(doc, container, 'p', '');
+        if (p) p.innerHTML = `<strong>${label}:</strong> ${value}`;
+    };
+
+    addDetail("Time Zone", metadata.facility_time_zone);
+    addDetail("Commercially Managed", typeof metadata.is_commercially_managed === 'boolean' ? (metadata.is_commercially_managed ? "Yes" : "No") : metadata.is_commercially_managed);
+
+    if (container.children.length > 0) parentElement.appendChild(container);
+}
 /**
  * Renders the main, comprehensive availability data table on the primary page.
  * @param {HTMLElement} parentElement The DOM element to append the table to.
@@ -2630,6 +2681,7 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         debugInfo.rendering.mainPageRenderStatus.links = (campgroundMetadata.links && campgroundMetadata.links.length > 0) ? 'DATA_FOUND' : 'DATA_MISSING';
         debugInfo.rendering.mainPageRenderStatus.activities = (campgroundMetadata.activities && campgroundMetadata.activities.length > 0) ? 'DATA_FOUND' : 'DATA_MISSING';
         debugInfo.rendering.mainPageRenderStatus.addresses = (campgroundMetadata.addresses && campgroundMetadata.addresses.length > 0) ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.otherMetadata = (campgroundMetadata.facility_time_zone || campgroundMetadata.is_commercially_managed !== undefined) ? 'DATA_FOUND' : 'DATA_MISSING';
 
         renderBookingWindow(infoContainer, campgroundMetadata.booking_information);
         renderFacilityRates(infoContainer, campgroundMetadata.fee_policies);
@@ -2638,6 +2690,7 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         renderLinks(infoContainer, campgroundMetadata.links);
         renderActivities(infoContainer, campgroundMetadata.activities);
         renderAddresses(infoContainer, campgroundMetadata.addresses);
+        renderOtherMetadata(infoContainer, campgroundMetadata);
 
         // Append the container with all the new sections to the main results container
         containerElement.appendChild(infoContainer);
@@ -2650,6 +2703,7 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         debugInfo.rendering.mainPageRenderStatus.links = 'METADATA_OBJECT_MISSING';
         debugInfo.rendering.mainPageRenderStatus.activities = 'METADATA_OBJECT_MISSING';
         debugInfo.rendering.mainPageRenderStatus.addresses = 'METADATA_OBJECT_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.otherMetadata = 'METADATA_OBJECT_MISSING';
     }
 
     // --- Section 2: Render Date Range, Summary, and Loop Info ---
@@ -2812,6 +2866,9 @@ function buildConfigFromForm() {
         }
     }
 
+    // Update sorting preferences
+    newConfig.sorting.sortFilteredSitesBy = document.getElementById('sortFilteredSitesBy').value;
+
     return newConfig;
 }
 
@@ -2876,6 +2933,9 @@ function handleCopyLink() {
         params.append(key, dynamicConfig.display[key]);
     }
 
+    // Add sorting parameters
+    if (dynamicConfig.sorting.sortFilteredSitesBy) params.append('sortFilteredSitesBy', dynamicConfig.sorting.sortFilteredSitesBy);
+
     const finalUrl = `${baseUrl}?${params.toString()}`;
 
     navigator.clipboard.writeText(finalUrl).then(() => {
@@ -2892,16 +2952,16 @@ function handleCopyLink() {
  */
 async function initializePage() {
     // --- Setup Live Debug Panel ---
-    const debugPanel = document.getElementById('live-debug-panel');
-    if (debugPanel) debugPanel.style.display = 'block';
-    const logDebug = (msg) => {
-        if (!debugPanel) return;
-        const p = document.createElement('p');
-        p.style.margin = '2px 0';
-        p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        debugPanel.appendChild(p);
-    };
-    logDebug("Initializing page...");
+    // const debugPanel = document.getElementById('live-debug-panel');
+    // if (debugPanel) debugPanel.style.display = 'block';
+    // const logDebug = (msg) => {
+    //     if (!debugPanel) return;
+    //     const p = document.createElement('p');
+    //     p.style.margin = '2px 0';
+    //     p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    //     debugPanel.appendChild(p);
+    // };
+    // logDebug("Initializing page...");
 
     const form = document.getElementById('config-form');
     const copyLinkButton = document.getElementById('copy-link-button');
@@ -2909,24 +2969,24 @@ async function initializePage() {
 
     if (!form || !copyLinkButton || !presetSelector) {
         const errorMsg = "Required form elements not found. Aborting UI initialization.";
-        logDebug(`ERROR: ${errorMsg}`);
+        // logDebug(`ERROR: ${errorMsg}`);
         console.error(errorMsg);
         return;
     }
 
     // --- Fetch and Populate Presets ---
     try {
-        logDebug("Attempting to fetch 'presets.json'...");
+        // logDebug("Attempting to fetch 'presets.json'...");
         const response = await fetch('presets.json');
-        logDebug(`Fetch response status: ${response.status} ${response.statusText}`);
-        logDebug(`Response OK: ${response.ok}`);
+        // logDebug(`Fetch response status: ${response.status} ${response.statusText}`);
+        // logDebug(`Response OK: ${response.ok}`);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        logDebug("Response OK. Attempting to parse JSON...");
+        // logDebug("Response OK. Attempting to parse JSON...");
         PRESET_COLLECTION = await response.json();
-        logDebug("Successfully parsed JSON. Populating preset dropdown...");
+        // logDebug("Successfully parsed JSON. Populating preset dropdown...");
 
         // Populate the preset dropdown from the fetched data
         const defaultOption = document.createElement('option');
@@ -2940,10 +3000,10 @@ async function initializePage() {
             option.textContent = presetName;
             presetSelector.appendChild(option);
         }
-        logDebug(`Dropdown populated with ${Object.keys(PRESET_COLLECTION).length} presets.`);
+        // logDebug(`Dropdown populated with ${Object.keys(PRESET_COLLECTION).length} presets.`);
     } catch (error) {
         const errorMsg = `Could not load or parse presets.json: ${error.message}`;
-        logDebug(`ERROR: ${errorMsg}`);
+        // logDebug(`ERROR: ${errorMsg}`);
         console.error(errorMsg, error);
         const errorOption = document.createElement('option');
         errorOption.value = "";
@@ -2951,7 +3011,7 @@ async function initializePage() {
         presetSelector.appendChild(errorOption);
         presetSelector.disabled = true;
     }
-    logDebug("\n--- Initializing Form from URL/Defaults ---");
+    // logDebug("\n--- Initializing Form from URL/Defaults ---");
 
     // 1. Create initial config from URL params, falling back to the hardcoded defaults
     const urlParams = new URLSearchParams(window.location.search);
@@ -2973,6 +3033,9 @@ async function initializePage() {
             initialConfig.display[key] = urlParams.get(key) === 'true';
         }
     }
+
+    // Handle sorting flags from the URL
+    initialConfig.sorting.sortFilteredSitesBy = urlParams.get('sortFilteredSitesBy') || initialConfig.sorting.sortFilteredSitesBy;
 
     // 2. Populate the form with the determined initial configuration
     populateFormFromConfig(initialConfig);
