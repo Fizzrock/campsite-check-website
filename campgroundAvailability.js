@@ -1,7 +1,7 @@
 /**
  * =================================================================================================
  * RECREATION.GOV CAMPSITE AVAILABILITY CHECKER
- * Version: 2.1.0
+ * Version: 2.2.0
  * =================================================================================================
  *
  * Description:
@@ -29,6 +29,8 @@
  * - Secure API Handling: All API calls are routed through a server-side proxy, keeping your API key safe.
  * - Comprehensive Data Display: Presents detailed information about campgrounds, recreation areas, events, and media,
  *   as well as rich metadata like reservation rules, notices, activities, and facility rates in a clean, organized main page view.
+ * - Rich Summary Data: Displays at-a-glance information on the main page, including user ratings, price ranges, site counts,
+ *   and cell coverage scores, sourced from an additional internal Rec.gov API.
  * - User-Configurable Tabs: Control the content, sorting, and detail-fetching behavior of results tabs directly from the UI.
  * - Enhanced Filtered Results: The "Filtered Sites" tab provides detailed summaries for both "Available" and "Not Reservable" dates,
  *   both for the overall tab and for each individual site.
@@ -36,9 +38,28 @@
  * - Password Protection: The live deployment is protected by a simple but effective access code via middleware.
  *
  * APIs Used:
- * - Recreation.gov Availability API: `https://www.recreation.gov/api/camps/availability/campground/...`
- * - Recreation.gov Metadata API: `https://www.recreation.gov/api/camps/campgrounds/...`
- * - RIDB API: `https://ridb.recreation.gov/api/v1/...` (Requires an API key)
+ * This application leverages two primary data sources, each with distinct purposes:
+ *
+ * 1. Recreation.gov Internal APIs (Unofficial, Not Publicly Documented):
+ *    These are the internal, undocumented APIs that the official Recreation.gov website uses.
+ *    They provide real-time availability data but are not officially supported and may change without notice.
+ *
+ *    - Availability API (`.../api/camps/availability/campground/...`):
+ *      The core endpoint for fetching the day-by-day availability grid for a specific campground and month.
+ *
+ *    - Metadata API (`.../api/camps/campgrounds/...`):
+ *      Provides rich campground-specific metadata, including booking windows, reservation rules, fee policies,
+ *      and important notices. It also provides the crucial `facility_id` needed to link to the RIDB API.
+ *
+ *    - Search API (`.../api/search?fq=id:...`):
+ *      A general-purpose search endpoint that provides a high-level summary of a facility, including user
+ *      ratings, price ranges, site counts, and cell coverage, which are not available elsewhere.
+ *
+ * 2. RIDB (Recreation Information Database) Public API:
+ *    - `https://ridb.recreation.gov/api/v1/...`
+ *    This is the official, documented, and stable API for recreation data. It requires a registered API key
+ *    and is used to fetch rich, detailed information about facilities, recreation areas, events, media,
+ *    and individual campsites.
  *
  * Relationship with `run-and-save-debug.js`:
  * This script is designed to be run in a browser, but it can also be automated for
@@ -90,6 +111,7 @@
  *    (Note: This file is already in `.gitignore` so it won't be committed).
  *
  * 3. Start the Server: Run `npm start`.
+ *    --->>> USE --->>> $env:RIDB_API_KEY="86bad9e1-04d7-40fc-89b9-8b3cecabea10"; $env:ACCESS_CODE="a_very_secret_password_123"; npm start
  *    - This command executes `vercel dev` as defined in `package.json`.
  *    - The terminal will show `> Ready! Available at http://localhost:3000`.
  *
@@ -246,7 +268,8 @@ const config = {
         showAvailabilitySummaryTab: false, // If true, opens a new tab with a summary of availability counts.
         showFullMetadataTab: false, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
         showCampsitesObjectTab: false, // For debugging, not yet implemented
-        showDebugTab: false // If true, opens a final tab with the entire `debugInfo` object for inspection.
+        showRecGovSearchDataTab: true, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
+        showDebugTab: true // If true, opens a final tab with the entire `debugInfo` object for inspection.
     },
     ////////////////////////////////////////
     // --- Behavior Configuration for Tabs ---
@@ -344,6 +367,7 @@ const AVAILABILITY_STATUS = {
  * @property {Array<object>|null} eventsData - Array of event data from RIDB.
  * @property {Array<object>|null} recAreaMedia - Array of media data for the recreation area from RIDB.
  * @property {object} combinedCampsites - The combined availability data for all fetched months.
+ * @property {object|null} recGovSearchData - High-level data from the internal Rec.gov search API.
  * @property {Response} response - The raw fetch Response object from the primary availability call.
  * @property {Date} requestDateTime - The timestamp when the primary data request was made.
  * @property {IdCollection} ids - A collection of all relevant IDs.
@@ -735,7 +759,8 @@ async function fetchAllData(config) {
         fetchFacilityDetails(ridbFacilityId),
         config.display.fetchAndShowEventsOnMainPage && recAreaId ? fetchRecAreaEvents(recAreaId) : Promise.resolve(null),
         config.display.showRecAreaMediaOnMainPage && recAreaId ? fetchRecAreaMedia(recAreaId) : Promise.resolve(null),
-        recAreaId ? fetchRecAreaDetails(recAreaId) : Promise.resolve(null)
+        recAreaId ? fetchRecAreaDetails(recAreaId) : Promise.resolve(null),
+        fetchRecGovSearchData(config.api.campgroundId)
     ];
 
     const allResults = await Promise.allSettled(allFetchPromises);
@@ -747,6 +772,7 @@ async function fetchAllData(config) {
     let eventsData = (allResults[availabilityFetchPromises.length + 1]?.status === 'fulfilled') ? allResults[availabilityFetchPromises.length + 1].value : null;
     let recAreaMedia = (allResults[availabilityFetchPromises.length + 2]?.status === 'fulfilled') ? allResults[availabilityFetchPromises.length + 2].value : null;
     let recAreaDetails = (allResults[availabilityFetchPromises.length + 3]?.status === 'fulfilled') ? allResults[availabilityFetchPromises.length + 3].value : null;
+    let recGovSearchData = (allResults[availabilityFetchPromises.length + 4]?.status === 'fulfilled') ? allResults[availabilityFetchPromises.length + 4].value : null;
 
     // --- Step 4: Second-chance logic for RecArea ID if initial attempt failed ---
     if (config.display.fetchAndShowEventsOnMainPage && !recAreaId && facilityDetails) {
@@ -807,6 +833,7 @@ async function fetchAllData(config) {
         recAreaDetails,
         eventsData,
         recAreaMedia,
+        recGovSearchData,
         combinedCampsites,
         response: mainResponseForHeaders || { headers: new Headers() },
         requestDateTime: overallRequestDateTime,
@@ -997,6 +1024,25 @@ async function fetchRecAreaDetails(recAreaId) {
 }
 
 /**
+ * Fetches high-level search data from the internal Recreation.gov search API.
+ * @param {string} campgroundId The ID of the campground to search for.
+ * @returns {Promise<object|null>} The search data object, or null on failure.
+ */
+async function fetchRecGovSearchData(campgroundId) {
+    if (!campgroundId) {
+        console.log("No Campground ID provided. Skipping Rec.gov search fetch.");
+        return null;
+    }
+    const url = `/api/fetch-ridb?type=rec-gov-search&campgroundId=${campgroundId}`;
+    const options = { headers: { 'accept': 'application/json' } };
+    const context = `Rec.gov Search Data for ${campgroundId}`;
+    // The API returns the object directly, so we just return the JSON if it's valid.
+    const dataProcessor = (json) => json || null;
+
+    return fetchApiData(url, options, context, dataProcessor);
+}
+
+/**
  * Formats a Date object into a "MM-DD-YYYY" string based on its UTC components.
  * @param {Date} dateObj The date to format.
  * @returns {string} The formatted date string.
@@ -1156,6 +1202,7 @@ async function renderAllOutputs(allData, config, mainContainer) {
         facilityDetails,
         recAreaDetails,
         eventsData,
+        recGovSearchData,
         recAreaMedia,
         combinedCampsites,
         response,
@@ -1170,7 +1217,7 @@ async function renderAllOutputs(allData, config, mainContainer) {
 
     const { campsites, availabilityCounts } = processAvailabilityData(finalAvailabilityData || { campsites: {} }, config);
 
-    renderMainPage(mainContainer, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
+    renderMainPage(mainContainer, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recGovSearchData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
 
     console.log("[renderAllOutputs] Proceeding to open new tabs based on configuration.");
 
@@ -1180,6 +1227,9 @@ async function renderAllOutputs(allData, config, mainContainer) {
     }
     if (config.display.showFullMetadataTab && campgroundMetadata) {
         displayDataInNewTab(campgroundMetadata, `Full Campground Metadata - ${config.api.campgroundId}`);
+    }
+    if (config.display.showRecGovSearchDataTab && recGovSearchData) {
+        displayDataInNewTab(recGovSearchData, `Rec.gov Search Data - ${config.api.campgroundId}`);
     }
     if (config.display.showAvailabilitySummaryTab) {
         displayAvailabilitySummaryInNewTab(availabilityCounts, config, requestDateTime, response);
@@ -1583,6 +1633,9 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         });
         logDebug(`Sorted idsForDetailFetch: [${idsForDetailFetch.join(', ')}]`);
 
+        // Log this for debugging purposes
+        debugInfo.processing.filteredSiteIdsForDetailFetch = idsForDetailFetch;
+
         const detailPromises = idsForDetailFetch.map(cId =>
             fetchCampsiteDetails(currentRidbFacilityId, cId)
         );
@@ -1771,6 +1824,167 @@ function displayAvailabilitySummaryInNewTab(availabilityCountsData, config, curr
         addInfoElement(doc, containerDiv, 'p', "No availability data to summarize for the selected period.");
     }
     newTab.document.close();
+}
+
+/**
+ * Renders the user ratings section with stars.
+ * @param {HTMLElement} parentElement The parent element to append the ratings to.
+ * @param {object} searchResult The result object from the rec.gov search API.
+ */
+function renderUserRatings(parentElement, searchResult) {
+    if (!searchResult || typeof searchResult.average_rating !== 'number' || typeof searchResult.number_of_ratings !== 'number') {
+        return;
+    }
+
+    const doc = parentElement.ownerDocument;
+    const ratingsContainer = doc.createElement('div');
+    ratingsContainer.className = 'ratings-section';
+    ratingsContainer.style.display = 'flex';
+    ratingsContainer.style.alignItems = 'center';
+    ratingsContainer.style.marginBottom = '10px';
+
+    const averageRating = parseFloat(searchResult.average_rating).toFixed(1);
+    const numRatings = searchResult.number_of_ratings;
+
+    // Create stars
+    const starsContainer = doc.createElement('div');
+    starsContainer.className = 'stars';
+    const fullStars = Math.round(searchResult.average_rating);
+    for (let i = 0; i < 5; i++) {
+        const star = doc.createElement('span');
+        star.innerHTML = i < fullStars ? '&#9733;' : '&#9734;'; // filled or empty star
+        star.style.color = '#f5b301'; // gold color
+        star.style.fontSize = '20px';
+        starsContainer.appendChild(star);
+    }
+
+    const ratingsText = doc.createElement('span');
+    ratingsText.textContent = ` ${averageRating} out of 5 (${numRatings} ratings)`;
+    ratingsText.style.marginLeft = '10px';
+    ratingsText.style.verticalAlign = 'middle';
+    ratingsText.style.fontSize = '0.9em';
+
+    ratingsContainer.appendChild(starsContainer);
+    ratingsContainer.appendChild(ratingsText);
+
+    // Insert after the main h1 title
+    const h1 = parentElement.querySelector('h1');
+    if (h1 && h1.nextSibling) {
+        parentElement.insertBefore(ratingsContainer, h1.nextSibling);
+    } else {
+        parentElement.appendChild(ratingsContainer);
+    }
+}
+
+/**
+ * Renders at-a-glance information like site count and types.
+ * @param {HTMLElement} parentElement The parent element to append the info to.
+ * @param {object} searchResult The result object from the rec.gov search API.
+ */
+function renderAtAGlanceInfo(parentElement, searchResult) {
+    if (!searchResult) return;
+
+    const siteInfoParts = [];
+    if (searchResult.campsites_count) {
+        // The API returns this as a string, which is fine.
+        siteInfoParts.push(`<strong>${searchResult.campsites_count}</strong> sites`);
+    }
+    if (searchResult.campsite_reserve_type && searchResult.campsite_reserve_type.length > 0) {
+        // e.g., (Site-Specific)
+        siteInfoParts.push(`(${searchResult.campsite_reserve_type.join(', ')})`);
+    }
+    if (searchResult.campsite_equipment_name && searchResult.campsite_equipment_name.length > 0) {
+        // e.g., for Tent, RV
+        siteInfoParts.push(`for ${searchResult.campsite_equipment_name.join(', ')}`);
+    }
+
+    const hasSiteInfo = siteInfoParts.length > 0;
+    const hasCellInfo = typeof searchResult.aggregate_cell_coverage === 'number';
+    const hasPriceInfo = searchResult.price_range &&
+        typeof searchResult.price_range.amount_min === 'number' &&
+        typeof searchResult.price_range.amount_max === 'number';
+
+
+    if (!hasSiteInfo && !hasCellInfo && !hasPriceInfo) return;
+
+    const doc = parentElement.ownerDocument;
+    const glanceContainer = doc.createElement('div');
+    glanceContainer.className = 'glance-info-section';
+    glanceContainer.style.marginBottom = '15px';
+    glanceContainer.style.fontSize = '1.1em';
+    glanceContainer.style.color = '#333';
+    glanceContainer.style.padding = '10px';
+    glanceContainer.style.backgroundColor = '#f8f9fa';
+    glanceContainer.style.border = '1px solid #dee2e6';
+    glanceContainer.style.borderRadius = '4px';
+
+    if (hasSiteInfo) {
+        const p = doc.createElement('p');
+        p.style.margin = '0';
+        p.innerHTML = siteInfoParts.join(' ');
+        glanceContainer.appendChild(p);
+    }
+
+    if (hasCellInfo) {
+        const coverage = searchResult.aggregate_cell_coverage;
+        const score = (coverage * 10).toFixed(1);
+        const raw = coverage.toFixed(4);
+        const p = addInfoElement(doc, glanceContainer, 'p', '');
+        p.style.margin = hasSiteInfo ? '8px 0 0 0' : '0'; // Add top margin if there's site info above
+        p.innerHTML = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${raw})`;
+    }
+
+    if (hasPriceInfo) {
+        const { amount_min, amount_max, per_unit } = searchResult.price_range;
+        let priceText;
+        if (amount_min === amount_max) {
+            priceText = `$${amount_min.toFixed(2)}`;
+        } else {
+            priceText = `$${amount_min.toFixed(2)} - $${amount_max.toFixed(2)}`;
+        }
+        if (per_unit) {
+            priceText += ` per ${per_unit}`;
+        }
+        const p = addInfoElement(doc, glanceContainer, 'p', '');
+        p.style.margin = (hasSiteInfo || hasCellInfo) ? '8px 0 0 0' : '0';
+        p.innerHTML = `<strong>Price:</strong> ${priceText}`;
+    }
+
+    const ratingsSection = parentElement.querySelector('.ratings-section');
+    parentElement.insertBefore(glanceContainer, ratingsSection.nextSibling);
+}
+
+/**
+ * Renders the primary preview image from the search data.
+ * @param {HTMLElement} parentElement The parent element to append the image to.
+ * @param {object} searchResult The result object from the rec.gov search API.
+ */
+function renderPrimaryImage(parentElement, searchResult) {
+    if (!searchResult || !searchResult.preview_image_url) {
+        return;
+    }
+
+    const doc = parentElement.ownerDocument;
+    const imageContainer = doc.createElement('div');
+    imageContainer.className = 'primary-image-section';
+    imageContainer.style.marginTop = '20px';
+
+    addInfoElement(doc, imageContainer, 'h3', 'Primary Image');
+
+    const img = doc.createElement('img');
+    img.src = searchResult.preview_image_url;
+    img.alt = searchResult.name || 'Primary campground image';
+    img.title = `View full size: ${searchResult.name || 'Primary Image'}`;
+    img.style.maxWidth = '600px';
+    img.style.width = '100%';
+    img.style.height = 'auto';
+    img.style.border = '1px solid #ddd';
+    img.style.borderRadius = '4px';
+    img.style.cursor = 'pointer';
+    img.addEventListener('click', () => showLightbox(searchResult.preview_image_url, doc));
+
+    imageContainer.appendChild(img);
+    parentElement.appendChild(imageContainer);
 }
 
 /**
@@ -2120,8 +2334,14 @@ function parseDateFromAriaLabelRobust(ariaLabel) {
  * @param {object|null} recAreaDetails The detailed data for the parent recreation area.
  * @param {IdCollection} ids The collection of IDs for the campground.
  */
-function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaDetails, ids) {
+function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaDetails, recGovSearchData, ids) {
     addInfoElement(document, parentElement, 'h1', facilityDetails.FacilityName || `Details for Campground ID: ${ids.campgroundId}`);
+
+    if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
+        const searchResult = recGovSearchData.results[0];
+        renderUserRatings(parentElement, searchResult);
+        renderAtAGlanceInfo(parentElement, searchResult);
+    }
 
     // --- Display Key IDs ---
     const idsDiv = document.createElement('div');
@@ -2143,6 +2363,14 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
         recAreaText += ` (${recAreaDetails.RecAreaName})`;
     }
     addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
+
+    if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
+        const searchResult = recGovSearchData.results[0];
+        if (searchResult.org_name && searchResult.org_id) {
+            const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
+            addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
+        }
+    }
     parentElement.appendChild(idsDiv);
 
     // --- Add link to Recreation.gov for the campground ---
@@ -2662,7 +2890,7 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
  * @param {object} config The script's configuration object.
  * @param {IdCollection} ids An object containing all relevant IDs.
  */
-function renderMainPage(containerElement, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids) {
+function renderMainPage(containerElement, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recGovSearchData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids) {
     if (typeof document === 'undefined' || !containerElement) {
         console.warn("Main page container element not found or document not available. Skipping main page DOM updates.");
         return;
@@ -2675,6 +2903,22 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
     debugInfo.rendering.mainPageRenderStatus.events = ids.eventInfoStatus;
     debugInfo.rendering.mainPageRenderStatus.mediaGalleries = 0;
 
+    // --- New debug info for rec.gov search data ---
+    const hasRecGovSearchData = recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0;
+    debugInfo.rendering.mainPageRenderStatus.recGovSearchData = hasRecGovSearchData ? 'DATA_FOUND' : 'DATA_MISSING';
+    if (hasRecGovSearchData) {
+        const searchResult = recGovSearchData.results[0];
+        debugInfo.rendering.mainPageRenderStatus.userRatings = (typeof searchResult.average_rating === 'number') ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.atAGlanceInfo = (searchResult.campsites_count || typeof searchResult.aggregate_cell_coverage === 'number' || searchResult.price_range) ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.primaryImage = searchResult.preview_image_url ? 'DATA_FOUND' : 'DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.organizationInfo = (searchResult.org_name && searchResult.org_id) ? 'DATA_FOUND' : 'DATA_MISSING';
+    } else {
+        debugInfo.rendering.mainPageRenderStatus.userRatings = 'PARENT_DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.atAGlanceInfo = 'PARENT_DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.primaryImage = 'PARENT_DATA_MISSING';
+        debugInfo.rendering.mainPageRenderStatus.organizationInfo = 'PARENT_DATA_MISSING';
+    }
+
     // --- Section 1: Render Header, Details, and Galleries ---
     if (facilityDetails) {
         const detailsContainer = document.createElement('div');
@@ -2683,7 +2927,12 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         containerElement.appendChild(detailsContainer);
 
         // Render the main header, facility details, and rec area details into their container.
-        renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, ids);
+        renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, recGovSearchData, ids);
+
+        // Render primary image from search data, if available
+        if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
+            renderPrimaryImage(detailsContainer, recGovSearchData.results[0]);
+        }
 
         // Render media galleries into the same container.
         if (facilityDetails.MEDIA && facilityDetails.MEDIA.length > 0) {
@@ -2724,6 +2973,15 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
             recAreaText += ` (${recAreaDetails.RecAreaName})`;
         }
         addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
+
+        if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
+            const searchResult = recGovSearchData.results[0];
+            if (searchResult.org_name && searchResult.org_id) {
+                const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
+                addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
+            }
+        }
+
         fallbackDiv.appendChild(idsDiv);
 
         const recGovLink = addInfoElement(document, fallbackDiv, 'p', '');
@@ -2821,6 +3079,7 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
 
     // --- Section 3: Render the Main Availability Data Table ---
     renderMainAvailabilityTable(containerElement, campsites, requestDateTime, response, config);
+    debugInfo.rendering.mainPageRenderStatus.mainAvailabilityTable = config.display.showMainDataTable ? 'RENDERED' : 'DISABLED';
 }
 
 /**
@@ -2862,6 +3121,7 @@ async function runAvailabilityCheck(config) {
 
     try {
         const allData = await fetchAllData(effectiveConfig);
+        // console.log("Rec.gov Search Data Response:", allData.recGovSearchData);
         await renderAllOutputs(allData, effectiveConfig, mainContainer);
     } catch (error) { // Catch errors not handled by Promise.allSettled's individual rejections
         console.error("Unhandled error in runAvailabilityCheck:", error);

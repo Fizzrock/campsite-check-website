@@ -19,6 +19,11 @@ const API_ROUTES = {
         urlTemplate: (p) => `https://www.recreation.gov/api/camps/availability/campground/${p.campgroundId}/month?start_date=${encodeURIComponent(p.start_date)}`,
         requiredParams: ['campgroundId', 'start_date'],
     },
+    'rec-gov-search': {
+        urlTemplate: (p) => `https://www.recreation.gov/api/search?fq=id:${p.campgroundId}_asset`,
+        requiredParams: ['campgroundId'],
+        needsApiKey: false,
+    },
     facilityDetails: {
         urlTemplate: (p) => `https://ridb.recreation.gov/api/v1/facilities/${p.facilityId}`,
         requiredParams: ['facilityId'],
