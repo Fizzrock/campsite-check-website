@@ -1,7 +1,7 @@
 /**
  * =================================================================================================
  * RECREATION.GOV CAMPSITE AVAILABILITY CHECKER
- * Version: 2.0.0
+ * Version: 2.1.0
  * =================================================================================================
  *
  * Description:
@@ -25,14 +25,14 @@
  * Key Features:
  * - Interactive UI: Dynamically configure searches using a web form instead of editing code.
  * - External Presets: Manage favorite campgrounds and site lists in an easy-to-edit `presets.json` file.
- * - Shareable Searches: Generate and copy bookmarkable URLs that contain your exact search configuration.
+ * - Shareable Searches: Generate and copy bookmarkable URLs that contain your exact search configuration, including all UI options.
  * - Secure API Handling: All API calls are routed through a server-side proxy, keeping your API key safe.
- * - Comprehensive Data Display: Presents detailed information about campgrounds, recreation areas, events,
- *   and media in a clean, organized main page view.
- * - Specialized Output Tabs: Generates separate, focused tabs for available sites, filtered sites,
- *   and raw data for in-depth analysis.
- * - Site Detail Fetching: Can fetch and display rich details, including photos and attributes, for specific
- *   campsites of interest.
+ * - Comprehensive Data Display: Presents detailed information about campgrounds, recreation areas, events, and media,
+ *   as well as rich metadata like reservation rules, notices, activities, and facility rates in a clean, organized main page view.
+ * - User-Configurable Tabs: Control the content, sorting, and detail-fetching behavior of results tabs directly from the UI.
+ * - Enhanced Filtered Results: The "Filtered Sites" tab provides detailed summaries for both "Available" and "Not Reservable" dates,
+ *   both for the overall tab and for each individual site.
+ * - Explicit Cache Status: Always know if you're seeing live or cached data with a clear status indicator on every results page.
  * - Password Protection: The live deployment is protected by a simple but effective access code via middleware.
  *
  * APIs Used:
@@ -1132,7 +1132,11 @@ function addRequestInfoElements(doc, parentElement, requestDateTime, response) {
     const age = response.headers.get('age');
     if (age) {
         const cacheDateTime = new Date(requestDateTime.getTime() - (parseInt(age) * 1000));
-        addInfoElement(doc, parentElement, 'p', `Cached Data (Age: ${age} seconds, Created: ${cacheDateTime.toLocaleString()})`, 'request-info');
+        const p = addInfoElement(doc, parentElement, 'p', '', 'request-info');
+        if (p) p.innerHTML = `<strong>Data Source:</strong> Cached (Age: ${age} seconds, Created: ${cacheDateTime.toLocaleString()})`;
+    } else {
+        const p = addInfoElement(doc, parentElement, 'p', '', 'request-info');
+        if (p) p.innerHTML = `<strong>Data Source:</strong> Live (Not from cache)`;
     }
 }
 
@@ -2126,8 +2130,19 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
     idsDiv.style.margin = '10px 0';
     idsDiv.style.backgroundColor = '#f0f0f0';
     idsDiv.style.border = '1px solid #ddd';
-    addInfoElement(document, idsDiv, 'p', '').innerHTML = `<strong>Recreation.gov Campground ID:</strong> ${ids.campgroundId || 'Not Found'}`;
-    addInfoElement(document, idsDiv, 'p', '').innerHTML = `<strong>Parent RecArea ID:</strong> ${ids.recAreaId || 'Not Found'}`;
+
+    let campgroundIdText = `<strong>Recreation.gov Campground ID:</strong> ${ids.campgroundId || 'Not Found'}`;
+    if (facilityDetails && facilityDetails.FacilityName) {
+        const cleanName = facilityDetails.FacilityName.split('(')[0].trim();
+        campgroundIdText += ` (${cleanName})`;
+    }
+    addInfoElement(document, idsDiv, 'p', '').innerHTML = campgroundIdText;
+
+    let recAreaText = `<strong>Parent RecArea ID:</strong> ${ids.recAreaId || 'Not Found'}`;
+    if (recAreaDetails && recAreaDetails.RecAreaName) {
+        recAreaText += ` (${recAreaDetails.RecAreaName})`;
+    }
+    addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
     parentElement.appendChild(idsDiv);
 
     // --- Add link to Recreation.gov for the campground ---
@@ -2696,8 +2711,19 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         idsDiv.style.margin = '10px 0';
         idsDiv.style.backgroundColor = '#f0f0f0';
         idsDiv.style.border = '1px solid #ddd';
-        addInfoElement(document, idsDiv, 'p', '').innerHTML = `<strong>Recreation.gov Campground ID:</strong> ${ids.campgroundId || 'Not Found'}`;
-        addInfoElement(document, idsDiv, 'p', '').innerHTML = `<strong>Parent RecArea ID:</strong> ${ids.recAreaId || 'Not Found'}`;
+        let campgroundIdText = `<strong>Recreation.gov Campground ID:</strong> ${ids.campgroundId || 'Not Found'}`;
+        // In the fallback, we don't have facilityDetails, but we might have campgroundMetadata
+        if (campgroundMetadata && campgroundMetadata.facility_name) {
+            const cleanName = campgroundMetadata.facility_name.split('(')[0].trim();
+            campgroundIdText += ` (${cleanName})`;
+        }
+        addInfoElement(document, idsDiv, 'p', '').innerHTML = campgroundIdText;
+
+        let recAreaText = `<strong>Parent RecArea ID:</strong> ${ids.recAreaId || 'Not Found'}`;
+        if (recAreaDetails && recAreaDetails.RecAreaName) {
+            recAreaText += ` (${recAreaDetails.RecAreaName})`;
+        }
+        addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
         fallbackDiv.appendChild(idsDiv);
 
         const recGovLink = addInfoElement(document, fallbackDiv, 'p', '');
