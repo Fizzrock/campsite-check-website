@@ -725,14 +725,14 @@ function prepareConfig(config) {
     debugInfo.configuration.initial = JSON.parse(JSON.stringify(config));
 
     // --- Determine effective startDate (API default month) ---
-    const initialApiStartDate = config.filters.startDate;
-    if (initialApiStartDate === "") {
+    if (config.filters.startDate === "") {
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
         config.filters.startDate = `${year}-${month}-01T00%3A00%3A00.000Z`;
         console.log(`Initial 'startDate' was empty. Dynamically set to the first of the current month: ${config.filters.startDate}`);
     } else {
+        // Ensure colons are properly encoded for the API URL.
         if (config.filters.startDate.includes(':') && !config.filters.startDate.includes('%3A')) {
             config.filters.startDate = config.filters.startDate.replace(/:/g, '%3A');
             console.warn(`'startDate' contained unencoded colons. Auto-encoded to: ${config.filters.startDate}`);
@@ -740,8 +740,9 @@ function prepareConfig(config) {
     }
 
     // --- Determine effective filter dates based on configuration ---
-    const initialFilterStartDate = config.filters.filterStartDate;
-    const initialFilterEndDate = config.filters.filterEndDate;
+    const MAX_SEARCH_DAYS = 40;
+    let initialFilterStartDate = config.filters.filterStartDate;
+    let initialFilterEndDate = config.filters.filterEndDate;
 
     if (initialFilterStartDate === "" && initialFilterEndDate === "") {
         if (typeof config.filters.filterDurationInDays === 'number' && config.filters.filterDurationInDays > 0) {
@@ -755,19 +756,32 @@ function prepareConfig(config) {
             config.filters.filterEndDate = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth() + 1).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`;
 
             console.log(`Filter dates were empty. Using duration: ${config.filters.filterDurationInDays} days. Effective Filter Start: ${config.filters.filterStartDate}, Effective Filter End: ${config.filters.filterEndDate}`);
-        } else {
-            config.filters.filterStartDate = null;
-            config.filters.filterEndDate = null;
-            console.log("Filter dates were empty and filterDurationInDays is not a valid positive number. Date range filtering disabled (set to null).");
         }
-    } else {
-        if (initialFilterStartDate === "") {
-            config.filters.filterStartDate = null;
-            console.log("Initial filterStartDate was an empty string, now effectively null (no start date constraint).");
-        }
-        if (initialFilterEndDate === "") {
-            config.filters.filterEndDate = null;
-            console.log("Initial filterEndDate was an empty string, now effectively null (no end date constraint).");
+    } else if (initialFilterStartDate !== "" && initialFilterEndDate === "") {
+        // End date is missing. Set it to MAX_SEARCH_DAYS after start date.
+        const startDateObj = new Date(initialFilterStartDate + "T00:00:00.000Z");
+        const endDateObj = new Date(startDateObj);
+        endDateObj.setUTCDate(startDateObj.getUTCDate() + MAX_SEARCH_DAYS - 1);
+        config.filters.filterEndDate = `${endDateObj.getUTCFullYear()}-${String(endDateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(endDateObj.getUTCDate()).padStart(2, '0')}`;
+        console.log(`Filter end date was empty. Set to a ${MAX_SEARCH_DAYS}-day range: ${config.filters.filterEndDate}`);
+    } else if (initialFilterStartDate === "" && initialFilterEndDate !== "") {
+        // Start date is missing. Set it to MAX_SEARCH_DAYS before end date.
+        const endDateObj = new Date(initialFilterEndDate + "T00:00:00.000Z");
+        const startDateObj = new Date(endDateObj);
+        startDateObj.setUTCDate(endDateObj.getUTCDate() - (MAX_SEARCH_DAYS - 1));
+        config.filters.filterStartDate = `${startDateObj.getUTCFullYear()}-${String(startDateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(startDateObj.getUTCDate()).padStart(2, '0')}`;
+        console.log(`Filter start date was empty. Set to a ${MAX_SEARCH_DAYS}-day range: ${config.filters.filterStartDate}`);
+    } else if (initialFilterStartDate !== "" && initialFilterEndDate !== "") {
+        // Both dates are provided. Check if the range is > MAX_SEARCH_DAYS and cap it.
+        const startDateObj = new Date(initialFilterStartDate + "T00:00:00.000Z");
+        const endDateObj = new Date(initialFilterEndDate + "T00:00:00.000Z");
+        const diffDays = (endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24) + 1;
+
+        if (diffDays > MAX_SEARCH_DAYS) {
+            const newEndDateObj = new Date(startDateObj);
+            newEndDateObj.setUTCDate(startDateObj.getUTCDate() + MAX_SEARCH_DAYS - 1);
+            config.filters.filterEndDate = `${newEndDateObj.getUTCFullYear()}-${String(newEndDateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(newEndDateObj.getUTCDate()).padStart(2, '0')}`;
+            console.warn(`Provided date range of ${diffDays} days exceeds ${MAX_SEARCH_DAYS} days. Capping end date to ${config.filters.filterEndDate}`);
         }
     }
 
@@ -1615,6 +1629,49 @@ function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, lo
  * @param {Response} response The fetch response object.
  */
 async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRidbFacilityId, requestDateTime, response) {
+    const campsiteDetailsCache = new Map();
+
+    // This handler is defined here to have access to the function's scope (cache, config, etc.)
+    async function handleShowDetailsClick(event) {
+        const button = event.target;
+        const campsiteId = button.dataset.campsiteId;
+        const siteName = button.dataset.siteName;
+        const tr = button.closest('tr');
+
+        if (!campsiteId || !tr) return;
+
+        button.textContent = 'Loading...';
+        button.disabled = true;
+
+        let details;
+        if (campsiteDetailsCache.has(campsiteId)) {
+            details = campsiteDetailsCache.get(campsiteId);
+        } else {
+            details = await fetchCampsiteDetails(currentRidbFacilityId, campsiteId);
+            if (details) {
+                campsiteDetailsCache.set(campsiteId, details);
+            }
+        }
+
+        button.parentElement.innerHTML = 'Details below'; // Replace button with text
+
+        // Create a new row to hold the details content
+        const detailsRow = tr.parentNode.insertRow(tr.sectionRowIndex + 1);
+        detailsRow.className = 'details-row';
+        const detailsCell = detailsRow.insertCell(0);
+        detailsCell.colSpan = tr.cells.length; // Span across all columns
+
+        if (details) {
+            const availableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.AVAILABLE).map(row => row.date);
+            const notReservableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE).map(row => row.date);
+            renderCampsiteDetailsInTab(details, availableDates, notReservableDates, detailsCell, tr.ownerDocument);
+        } else {
+            detailsCell.textContent = `Could not load details for site ${siteName}.`;
+            detailsCell.style.padding = '10px';
+            detailsCell.style.color = 'red';
+        }
+    }
+
     const siteNumbersToFilterArray = config.siteFilters.siteNumbersToFilter;
     const availableOnlyConfig = config.tabBehavior.showFilteredSitesAvailableOnly;
     const notReservableOnlyConfig = config.tabBehavior.showFilteredSitesNotReservableOnly;
@@ -1649,6 +1706,17 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         availabilityCell.className = getAvailabilityClass(rowData.availability);
         tr.insertCell().textContent = rowData.quantity;
         tr.insertCell().textContent = rowData.campsite_id;
+
+        // If no site filter is active, add a button for lazy-loading details.
+        if (!isFilteringBySiteNumber) {
+            const detailsCell = tr.insertCell();
+            const detailsButton = doc.createElement('button');
+            detailsButton.textContent = 'Show Details';
+            detailsButton.dataset.campsiteId = rowData.campsite_id;
+            detailsButton.dataset.siteName = rowData.site;
+            // The event listener is attached in the postRenderCallback
+            detailsCell.appendChild(detailsButton);
+        }
         return tr;
     };
 
@@ -1675,48 +1743,82 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         };
         // --- END: In-Tab Debugging ---
 
-        const idsForDetailFetch = getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug);
-        if (idsForDetailFetch.length === 0) {
-            logDebug(`\nCONCLUSION: No site IDs were identified for detail fetching. Exiting callback.`);
-            return;
-        }
+        if (isFilteringBySiteNumber) {
+            logDebug(`Site filter is active. Fetching details automatically.`);
+            let idsForDetailFetch = getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug);
+            const originalDetailFetchCount = idsForDetailFetch.length;
+            const MAX_DETAILS_TO_FETCH = 50;
+            let isCapped = false;
 
-        // Log this for debugging purposes
-        debugInfo.processing.filteredSiteIdsForDetailFetch = idsForDetailFetch;
-
-        const detailPromises = idsForDetailFetch.map(cId =>
-            fetchCampsiteDetails(currentRidbFacilityId, cId)
-        );
-
-        // Add the header for the details section now that we know we have details to fetch.
-        const detailsHeader = addInfoElement(doc, containerDiv, 'h2', "Detailed Information for Filtered Campsites");
-        if (detailsHeader) {
-            detailsHeader.style.marginTop = "30px";
-            detailsHeader.style.borderTop = "2px solid #ccc";
-            detailsHeader.style.paddingTop = "20px";
-        }
-
-        const loadingDetailsP = addInfoElement(doc, containerDiv, 'p', "Loading detailed information for each campsite...");
-        const allDetailsResults = await Promise.allSettled(detailPromises);
-        if (loadingDetailsP) containerDiv.removeChild(loadingDetailsP);
-
-        allDetailsResults.forEach(result => {
-            if (result.status === 'fulfilled' && result.value) {
-                const campsiteDetails = result.value;
-                // Find all "Available" dates for this specific campsite from the table data.
-                const availableDates = filteredRowsData
-                    .filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.AVAILABLE)
-                    .map(row => row.date);
-                // Find all "Not Reservable" dates for this specific campsite.
-                const notReservableDates = filteredRowsData
-                    .filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE)
-                    .map(row => row.date);
-
-                renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, containerDiv, doc);
-            } else if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value)) {
-                console.warn("[displayFilteredSitesInNewTab] Failed to fetch or no data for a campsite detail:", result.reason || "No data returned");
+            if (config.siteFilters.siteNumbersToFilter.length > 0 && originalDetailFetchCount > MAX_DETAILS_TO_FETCH) {
+                logDebug(`Capping site detail fetches from ${originalDetailFetchCount} to ${MAX_DETAILS_TO_FETCH}.`);
+                idsForDetailFetch = idsForDetailFetch.slice(0, MAX_DETAILS_TO_FETCH);
+                isCapped = true;
             }
-        });
+
+            if (idsForDetailFetch.length === 0) {
+                logDebug(`\nCONCLUSION: No site IDs were identified for detail fetching. Exiting callback.`);
+                return;
+            }
+
+            const detailsHeader = addInfoElement(doc, containerDiv, 'h2', "Detailed Information for Filtered Campsites");
+            if (detailsHeader) {
+                detailsHeader.style.marginTop = "30px";
+                detailsHeader.style.borderTop = "2px solid #ccc";
+                detailsHeader.style.paddingTop = "20px";
+            }
+
+            if (isCapped) {
+                const capNote = doc.createElement('p');
+                capNote.innerHTML = `<strong>Note:</strong> To improve performance, details are being shown for the first <strong>${MAX_DETAILS_TO_FETCH}</strong> of <strong>${originalDetailFetchCount}</strong> matching sites.`;
+                capNote.className = 'info-message';
+                detailsHeader.parentNode.insertBefore(capNote, detailsHeader);
+            }
+
+            debugInfo.processing.filteredSiteIdsForDetailFetch = idsForDetailFetch;
+
+            const loadingDetailsP = addInfoElement(doc, containerDiv, 'p', "Loading detailed information for each campsite...");
+            const detailPromises = idsForDetailFetch.map(cId => fetchCampsiteDetails(currentRidbFacilityId, cId));
+            const allDetailsResults = await Promise.allSettled(detailPromises);
+            if (loadingDetailsP) containerDiv.removeChild(loadingDetailsP);
+
+            allDetailsResults.forEach(result => {
+                if (result.status === 'fulfilled' && result.value) {
+                    const campsiteDetails = result.value;
+                    const availableDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.AVAILABLE).map(row => row.date);
+                    const notReservableDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE).map(row => row.date);
+                    renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, containerDiv, doc);
+                } else if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value)) {
+                    console.warn("[displayFilteredSitesInNewTab] Failed to fetch or no data for a campsite detail:", result.reason || "No data returned");
+                }
+            });
+        } else {
+            logDebug(`Site filter is empty. Details will be lazy-loaded on demand.`);
+            const detailButtons = containerDiv.querySelectorAll('button[data-campsite-id]');
+            detailButtons.forEach(button => {
+                button.addEventListener('click', handleShowDetailsClick);
+            });
+            logDebug(`Attached 'Show Details' listeners to ${detailButtons.length} buttons.`);
+
+            // Adjust column widths for this specific view to prevent squishing
+            const table = containerDiv.querySelector('table');
+            if (table) {
+                const styleId = 'filtered-sites-lazy-style';
+                if (!doc.getElementById(styleId)) {
+                    const style = doc.createElement('style');
+                    style.id = styleId;
+                    // Give more space to the middle columns and control the Actions column width
+                    style.textContent = `
+                        .filtered-sites-lazy-load th:nth-child(4) { width: 15%; } /* Availability */
+                        .filtered-sites-lazy-load th:nth-child(5) { width: 10%; } /* Quantity */
+                        .filtered-sites-lazy-load th:nth-child(6) { width: 15%; } /* Campsite ID */
+                        .filtered-sites-lazy-load th:nth-child(7) { width: 15%; } /* Actions */
+                    `;
+                    doc.head.appendChild(style);
+                }
+                table.classList.add('filtered-sites-lazy-load');
+            }
+        }
     };
 
     // 4. Configure and call the generic renderer.
@@ -1811,11 +1913,16 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
     const sortDescription = config.sorting.sortFilteredSitesBy === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
     const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"}) - ${config.api.campgroundId}`;
 
+    const headers = ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"];
+    if (!isFilteringBySiteNumber) {
+        headers.push("Actions");
+    }
+
     await renderTabularDataInNewTab({
         tabTitle: tabTitle,
         pageTitle: pageTitle,
         dataRows: filteredRowsData,
-        headers: ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"],
+        headers: headers,
         preTableRenderCallback: preTableRenderCallback,
         config: config,
         allCampsitesData: allCampsitesData,
@@ -3276,7 +3383,15 @@ function buildConfigFromForm() {
 
     // Parse site numbers from textarea
     const sitesText = document.getElementById('siteNumbers').value;
-    newConfig.siteFilters.siteNumbersToFilter = sitesText.split(',').map(s => s.trim()).filter(Boolean);
+    const MAX_SITES_TO_FILTER = 30;
+    let siteNumbers = sitesText.split(',').map(s => s.trim()).filter(Boolean);
+    if (siteNumbers.length > MAX_SITES_TO_FILTER) {
+        console.warn(`User entered ${siteNumbers.length} sites, which is more than the maximum of ${MAX_SITES_TO_FILTER}. Truncating the list.`);
+        siteNumbers = siteNumbers.slice(0, MAX_SITES_TO_FILTER);
+        // Update the UI to show the user the truncated list
+        document.getElementById('siteNumbers').value = siteNumbers.join(', ');
+    }
+    newConfig.siteFilters.siteNumbersToFilter = siteNumbers;
 
     // Update display toggles from checkboxes
     for (const key in newConfig.display) {
@@ -3463,6 +3578,43 @@ async function initializePage() {
         // logDebug(`ERROR: ${errorMsg}`);
         console.error(errorMsg);
         return;
+    }
+
+    // --- Add UI Note for Date Range ---
+    const endDateInput = document.getElementById('filterEndDate');
+    if (endDateInput && endDateInput.parentElement) {
+        // Create a placeholder for the first column to align the note correctly in the grid
+        const placeholder = document.createElement('div');
+
+        const noteElement = document.createElement('p');
+        noteElement.className = 'form-note';
+        noteElement.innerHTML = 'The maximum search range is 40 days. If only one date is provided, a 40-day range is calculated automatically. Longer ranges will be capped.' +
+                                '<br><strong>Leave dates blank for a 30-day search starting today.</strong>';
+        noteElement.style.fontSize = '0.8em';
+        noteElement.style.color = '#555';
+        noteElement.style.marginTop = '5px';
+
+        // Insert the new row (placeholder + note) after the end date input's row
+        endDateInput.insertAdjacentElement('afterend', noteElement);
+        endDateInput.insertAdjacentElement('afterend', placeholder);
+    }
+
+    // --- Add UI Note for Site Filter Limit ---
+    const siteNumbersTextarea = document.getElementById('siteNumbers');
+    if (siteNumbersTextarea && siteNumbersTextarea.parentElement) {
+        // Create a placeholder for the first column to align the note correctly in the grid
+        const placeholder = document.createElement('div');
+
+        const noteElement = document.createElement('p');
+        noteElement.className = 'form-note';
+        noteElement.innerHTML = '<strong>Note:</strong> A maximum of 30 site numbers can be entered. The list will be automatically truncated if it exceeds this limit.';
+        noteElement.style.fontSize = '0.8em';
+        noteElement.style.color = '#555';
+        noteElement.style.marginTop = '5px';
+
+        // Insert the new row (placeholder + note) after the textarea's row
+        siteNumbersTextarea.insertAdjacentElement('afterend', noteElement);
+        siteNumbersTextarea.insertAdjacentElement('afterend', placeholder);
     }
 
     // --- Fetch and Populate Presets ---
