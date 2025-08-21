@@ -1,7 +1,7 @@
 /**
  * =================================================================================================
  * RECREATION.GOV CAMPSITE AVAILABILITY CHECKER
- * Version: 2.2.0
+ * Version: 2.3.0
  * =================================================================================================
  *
  * Description:
@@ -27,14 +27,17 @@
  * - External Presets: Manage favorite campgrounds and site lists in an easy-to-edit `presets.json` file.
  * - Shareable Searches: Generate and copy bookmarkable URLs that contain your exact search configuration, including all UI options.
  * - Secure API Handling: All API calls are routed through a server-side proxy, keeping your API key safe.
+ * - Intelligent API Management: Implemented "lazy loading" for site details to prevent API rate-limiting and improve performance. Details are fetched on-demand or capped at a reasonable limit.
+ * - Search Constraints: Enforces a maximum 40-day search window and a 30-site filter limit to ensure efficient and predictable queries.
  * - Comprehensive Data Display: Presents detailed information about campgrounds, recreation areas, events, and media,
  *   as well as rich metadata like reservation rules, notices, activities, and facility rates in a clean, organized main page view.
  * - Rich Summary Data: Displays at-a-glance information on the main page, including user ratings, price ranges, site counts,
  *   and cell coverage scores, sourced from an additional internal Rec.gov API.
- * - User-Configurable Tabs: Control the content, sorting, and detail-fetching behavior of results tabs directly from the UI.
+ * - Global Sort Control: A single checkbox now controls the sort order (by Site or by Date) across all data tables for a consistent user experience.
  * - Enhanced Filtered Results: The "Filtered Sites" tab provides detailed summaries for both "Available" and "Not Reservable" dates,
  *   both for the overall tab and for each individual site.
  * - Explicit Cache Status: Always know if you're seeing live or cached data with a clear status indicator on every results page.
+ * - Enhanced Debugging: The debug output now includes a summary of all API calls, flagging any non-200 responses for quick diagnostics.
  * - Password Protection: The live deployment is protected by a simple but effective access code via middleware.
  *
  * APIs Used:
@@ -292,10 +295,8 @@ const config = {
 
     // --- Sorting Preferences ---
     sorting: {
-        // Primary sort key for the "Filtered Sites" tab. Options: "site", "date".
-        sortFilteredSitesBy: "date",
-        // Primary sort key for the "Available Sites" tab. Options: "site", "date".
-        sortAvailableSitesBy: "date",
+        // Primary sort key for all data tables. Options: "site", "date".
+        primarySortKey: "date",
     }
 };
 // --- END if Configuration ---
@@ -326,6 +327,7 @@ const debugInfo = {
         effective: null
     },
     api: {
+        summary: null,
         monthsToFetch: [],
         calls: [] // Each entry: { context, url, status, error?, timestamp }
     },
@@ -1507,7 +1509,7 @@ async function displayAvailableSitesInNewTab(allCampsitesData, config, requestDa
     const rowFilter = (_campsite, availability) => {
         return availability === AVAILABILITY_STATUS.AVAILABLE || (includeNotReservable && availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
     };
-    const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.sortAvailableSitesBy);
+    const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData, index) => {
@@ -1525,7 +1527,7 @@ async function displayAvailableSitesInNewTab(allCampsitesData, config, requestDa
 
     // 3. Configure and call the generic renderer.
     const pageTitle = `Available Campsites${includeNotReservable ? ' & Not Reservable' : ''} - ${config.api.campgroundId}`;
-    const sortDescription = config.sorting.sortAvailableSitesBy === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
+    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
 
     await renderTabularDataInNewTab({
         tabTitle: `Available Sites - ${config.api.campgroundId}`,
@@ -1693,7 +1695,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         return true; // Fallback
     };
 
-    const filteredRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.sortFilteredSitesBy);
+    const filteredRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData, index) => {
@@ -1910,7 +1912,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
     };
 
     const pageTitle = `Filtered Campsite Availability - ${config.api.campgroundId}`;
-    const sortDescription = config.sorting.sortFilteredSitesBy === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
+    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
     const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"}) - ${config.api.campgroundId}`;
 
     const headers = ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"];
@@ -3017,9 +3019,10 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
         }
     }
 
-    rowsToSort.sort(createSiteSorter('site'));
+    rowsToSort.sort(createSiteSorter(config.sorting.primarySortKey));
 
-    const mainSortInfo = addInfoElement(document, parentElement, 'p', "Data sorted primarily by Site, then by Date.", 'sort-info');
+    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
+    const mainSortInfo = addInfoElement(document, parentElement, 'p', sortDescription, 'sort-info');
     if (mainSortInfo) mainSortInfo.style.fontStyle = 'italic';
 
     const headers = ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"];
@@ -3268,6 +3271,36 @@ function handleFetchError(error, containerElement) {
 }
 
 /**
+ * Generates a summary of API call outcomes.
+ * @param {Array<object>} apiCalls - The array of API call log entries from `debugInfo.api.calls`.
+ * @returns {{totalCalls: number, successfulCalls: number, failedCalls: number, failures: Array<object>}} - The summary object.
+ */
+function generateApiSummary(apiCalls) {
+    const totalCalls = apiCalls.length;
+    let successfulCalls = 0;
+    const failures = [];
+
+    apiCalls.forEach(call => {
+        if (call.status === 200) {
+            successfulCalls++;
+        } else {
+            failures.push({
+                context: call.context,
+                status: call.status,
+                error: call.error || 'No error message provided.'
+            });
+        }
+    });
+
+    return {
+        totalCalls,
+        successfulCalls,
+        failedCalls: totalCalls - successfulCalls,
+        failures
+    };
+}
+
+/**
  * The main entry point and execution flow for the script.
  * It prepares the configuration, fetches all data, and then triggers the rendering process.
  * @param {object} config The initial configuration object.
@@ -3289,6 +3322,9 @@ async function runAvailabilityCheck(config) {
         console.error("Unhandled error in runAvailabilityCheck:", error);
         handleFetchError(error, document.getElementById('tab-panels'));
     } finally {
+        // Generate the API call summary before finalizing the debug object.
+        debugInfo.api.summary = generateApiSummary(debugInfo.api.calls);
+
         debugInfo.timestamps.end = new Date().toISOString();
         console.log("Script execution finished. Final debug object:", debugInfo);
 
@@ -3335,8 +3371,9 @@ function populateFormFromConfig(configObject) {
     }
 
     if (configObject.sorting) {
-        if (configObject.sorting.sortFilteredSitesBy) {
-            document.getElementById('sortFilteredSitesBy').value = configObject.sorting.sortFilteredSitesBy;
+        // Handle the new global sort checkbox
+        if (configObject.sorting.primarySortKey) {
+            document.getElementById('sortBySiteFirst').checked = configObject.sorting.primarySortKey === 'site';
         }
     }
 
@@ -3401,8 +3438,9 @@ function buildConfigFromForm() {
         }
     }
 
-    // Update sorting preferences
-    newConfig.sorting.sortFilteredSitesBy = document.getElementById('sortFilteredSitesBy').value;
+    // Update sorting preferences from the new global checkbox
+    const sortBySite = document.getElementById('sortBySiteFirst').checked;
+    newConfig.sorting.primarySortKey = sortBySite ? 'site' : 'date';
 
     // Update tab behavior preferences
     const behavior = newConfig.tabBehavior;
@@ -3533,8 +3571,10 @@ function handleCopyLink() {
         params.append(key, dynamicConfig.display[key]);
     }
 
-    // Add sorting parameters
-    if (dynamicConfig.sorting.sortFilteredSitesBy) params.append('sortFilteredSitesBy', dynamicConfig.sorting.sortFilteredSitesBy);
+    // Add sorting parameter from the new global checkbox
+    if (dynamicConfig.sorting.primarySortKey === 'site') {
+        params.append('sortBySiteFirst', 'true');
+    }
 
     // Add tab behavior parameters from the UI controls
     params.append('includeNotReservableInAvailableTab', document.getElementById('includeNotReservableInAvailableTab').checked);
@@ -3607,7 +3647,8 @@ async function initializePage() {
 
         const noteElement = document.createElement('p');
         noteElement.className = 'form-note';
-        noteElement.innerHTML = '<strong>Note:</strong> A maximum of 30 site numbers can be entered. The list will be automatically truncated if it exceeds this limit.';
+        noteElement.innerHTML = 'A maximum of 30 site numbers can be entered. The list will be automatically truncated if it exceeds this limit.' +
+                                '<br><strong>If left blank, the "Filtered Sites" tab will show all sites, with details enabled per site as needed.</strong>';
         noteElement.style.fontSize = '0.8em';
         noteElement.style.color = '#555';
         noteElement.style.marginTop = '5px';
@@ -3677,8 +3718,10 @@ async function initializePage() {
         }
     }
 
-    // Handle sorting flags from the URL
-    initialConfig.sorting.sortFilteredSitesBy = urlParams.get('sortFilteredSitesBy') || initialConfig.sorting.sortFilteredSitesBy;
+    // Handle sorting flags from the URL using the new global checkbox parameter
+    if (urlParams.get('sortBySiteFirst') === 'true') {
+        initialConfig.sorting.primarySortKey = 'site';
+    }
 
     // Handle tab behavior flags from the URL
     if (urlParams.has('includeNotReservableInAvailableTab')) {
