@@ -1443,6 +1443,42 @@ function displayDataInNewTab(jsonData, title = "Parsed API Data") {
 }
 
 /**
+ * A generic data processor to filter and sort campsite availability data.
+ * @param {object} allCampsitesData - The complete campsites data object.
+ * @param {object} config - The main configuration object.
+ * @param {function(object, string): boolean} rowFilterPredicate - A function that returns true if a row should be included.
+ * @param {string} sortBy - The primary key to sort by ('site' or 'date').
+ * @returns {Array<object>} The filtered and sorted array of row data.
+ */
+function processAndSortAvailability(allCampsitesData, config, rowFilterPredicate, sortBy) {
+    const rowsData = [];
+    if (allCampsitesData && Object.keys(allCampsitesData).length > 0) {
+        for (const cId in allCampsitesData) {
+            const campsite = allCampsitesData[cId];
+            for (const dateStr in campsite.availabilities) {
+                const currentAvailability = campsite.availabilities[dateStr];
+
+                // Check if the row passes the specific filter for the tab and the date range.
+                if (isDateInRange(dateStr, config.filters.filterStartDate, config.filters.filterEndDate) && rowFilterPredicate(campsite, currentAvailability)) {
+                    const dateObj = new Date(dateStr);
+                    rowsData.push({
+                        site: campsite.site,
+                        date: formatUTCDate(dateObj),
+                        originalDate: dateObj,
+                        availability: currentAvailability,
+                        quantity: campsite.quantities[dateStr],
+                        campsite_id: campsite.campsite_id
+                    });
+                }
+            }
+        }
+    }
+    rowsData.sort(createSiteSorter(sortBy));
+    return rowsData;
+}
+
+
+/**
  * Renders a new tab showing only campsites that are "Available" (and optionally "Not Reservable").
  * It filters the main dataset, sorts it, and uses the generic `renderTabularDataInNewTab` function.
  * @param {object} allCampsitesData The complete campsites data object.
@@ -1453,30 +1489,11 @@ function displayDataInNewTab(jsonData, title = "Parsed API Data") {
 async function displayAvailableSitesInNewTab(allCampsitesData, config, requestDateTime, response) {
     const includeNotReservable = config.tabBehavior.includeNotReservableInAvailableTab;
 
-    // 1. Filter and sort the data specifically for this tab's purpose.
-    const availableRowsData = [];
-    if (allCampsitesData && Object.keys(allCampsitesData).length > 0) {
-        for (const cId in allCampsitesData) {
-            const campsite = allCampsitesData[cId];
-            for (const dateStr in campsite.availabilities) {
-                const currentAvailability = campsite.availabilities[dateStr];
-                if (isDateInRange(dateStr, config.filters.filterStartDate, config.filters.filterEndDate)) { // Apply date range filter
-                    if (currentAvailability === AVAILABILITY_STATUS.AVAILABLE || (includeNotReservable && currentAvailability === AVAILABILITY_STATUS.NOT_RESERVABLE)) {
-                        const dateObj = new Date(dateStr);
-                        availableRowsData.push({
-                            site: campsite.site,
-                            date: formatUTCDate(dateObj),
-                            originalDate: dateObj,
-                            availability: currentAvailability,
-                            quantity: campsite.quantities[dateStr],
-                            campsite_id: campsite.campsite_id
-                        });
-                    }
-                }
-            }
-        }
-    }
-    availableRowsData.sort(createSiteSorter(config.sorting.sortAvailableSitesBy));
+    // 1. Use the new generic processor to filter and sort the data.
+    const rowFilter = (_campsite, availability) => {
+        return availability === AVAILABILITY_STATUS.AVAILABLE || (includeNotReservable && availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
+    };
+    const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.sortAvailableSitesBy);
 
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData, index) => {
@@ -1528,6 +1545,67 @@ function normalizeSiteName(name) {
 }
 
 /**
+ * Determines which site IDs require detailed information fetching based on the current configuration and filtered results.
+ * @param {object} config - The main configuration object.
+ * @param {Array<object>} filteredRowsData - The data already filtered for the tab.
+ * @param {object} allCampsitesData - The complete campsites data object for lookups.
+ * @param {function(string): void} logDebug - A logging function for in-tab diagnostics.
+ * @returns {Array<string>} A sorted array of campsite IDs to fetch details for.
+ */
+function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug = () => {}) {
+    const idsForDetailFetch = [];
+
+    if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
+        logDebug(`'fetchDetailsForAllFilteredSites' is TRUE.`);
+        const siteNumbersToFilterArray = config.siteFilters.siteNumbersToFilter;
+        if (siteNumbersToFilterArray.length > 0 && allCampsitesData) {
+            const siteNameToIdMap = new Map(Object.values(allCampsitesData).map(c => [normalizeSiteName(c.site), c.campsite_id]));
+            siteNumbersToFilterArray.forEach(siteName => {
+                const campsiteId = siteNameToIdMap.get(normalizeSiteName(siteName));
+                if (campsiteId) idsForDetailFetch.push(campsiteId);
+                else logDebug(`- WARN: Could not find campsite_id for site name "${siteName}".`);
+            });
+        }
+    } else {
+        logDebug(`'fetchDetailsForAllFilteredSites' is FALSE.`);
+
+        // Group rows by campsite_id for more efficient processing.
+        const sitesWithStatus = filteredRowsData.reduce((acc, row) => {
+            if (!acc[row.campsite_id]) {
+                acc[row.campsite_id] = { hasAvailable: false, hasNotReservable: false };
+            }
+            if (row.availability === AVAILABILITY_STATUS.AVAILABLE) {
+                acc[row.campsite_id].hasAvailable = true;
+            }
+            if (row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+                acc[row.campsite_id].hasNotReservable = true;
+            }
+            return acc;
+        }, {});
+
+        // Determine which sites to fetch based on their statuses.
+        for (const cId in sitesWithStatus) {
+            const { hasAvailable, hasNotReservable } = sitesWithStatus[cId];
+            const shouldFetch = (config.tabBehavior.fetchDetailsForAvailableFilteredSites && hasAvailable) ||
+                              (config.tabBehavior.fetchDetailsForNotReservableFilteredSites && hasNotReservable);
+
+            if (shouldFetch) {
+                idsForDetailFetch.push(cId);
+            }
+        }
+    }
+
+    logDebug(`Identified ${idsForDetailFetch.length} site(s) for detail fetching.`);
+
+    // Sort the final list numerically based on the site number for consistent display order.
+    const siteNumberMap = new Map(Object.values(allCampsitesData).map(c => [c.campsite_id, parseInt(String(c.site).match(/\d+/)?.[0] || '0', 10)]));
+    idsForDetailFetch.sort((idA, idB) => (siteNumberMap.get(idA) || 0) - (siteNumberMap.get(idB) || 0));
+    logDebug(`Sorted idsForDetailFetch: [${idsForDetailFetch.join(', ')}]`);
+
+    return idsForDetailFetch;
+}
+
+/**
  * Renders a new tab showing only the campsites specified in the configuration's filter list.
  * This function can also fetch and display detailed information (like photos) for these specific sites.
  * @param {object} allCampsitesData The complete campsites data object.
@@ -1541,50 +1619,24 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
     const availableOnlyConfig = config.tabBehavior.showFilteredSitesAvailableOnly;
     const notReservableOnlyConfig = config.tabBehavior.showFilteredSitesNotReservableOnly;
     const isFilteringBySiteNumber = siteNumbersToFilterArray && siteNumbersToFilterArray.length > 0;
-
-    // Create a normalized version of the filter list for consistent matching (e.g., '20' should match '020').
     const normalizedSiteNumbersToFilter = siteNumbersToFilterArray.map(normalizeSiteName);
 
-    // 1. Filter and sort the data based on this tab's specific criteria.
-    const filteredRowsData = [];
-    if (allCampsitesData && Object.keys(allCampsitesData).length > 0) {
-        for (const cId in allCampsitesData) {
-            const campsite = allCampsitesData[cId];
-            // Normalize the site name from the API before comparing it to the normalized filter list.
-            const siteMatchesFilter = !isFilteringBySiteNumber || normalizedSiteNumbersToFilter.includes(normalizeSiteName(campsite.site));
-            if (siteMatchesFilter) {
-                for (const dateStr in campsite.availabilities) {
-                    const currentAvailability = campsite.availabilities[dateStr];
-                    let includeRow;
-
-                    if (!availableOnlyConfig && !notReservableOnlyConfig) { // Case for "Show All Statuses"
-                        includeRow = true;
-                    } else if (availableOnlyConfig && notReservableOnlyConfig) { // Case for "Available & Not Reservable"
-                        includeRow = (currentAvailability === AVAILABILITY_STATUS.AVAILABLE || currentAvailability === AVAILABILITY_STATUS.NOT_RESERVABLE);
-                    } else if (availableOnlyConfig) {
-                        includeRow = (currentAvailability === AVAILABILITY_STATUS.AVAILABLE);
-                    } else if (notReservableOnlyConfig) {
-                        includeRow = (currentAvailability === AVAILABILITY_STATUS.NOT_RESERVABLE);
-                    } else {
-                        includeRow = true;
-                    }
-
-                    if (includeRow && isDateInRange(dateStr, config.filters.filterStartDate, config.filters.filterEndDate)) {
-                        const dateObj = new Date(dateStr);
-                        filteredRowsData.push({
-                            site: campsite.site,
-                            date: formatUTCDate(dateObj),
-                            originalDate: dateObj,
-                            availability: currentAvailability,
-                            quantity: campsite.quantities[dateStr],
-                            campsite_id: campsite.campsite_id
-                        });
-                    }
-                }
-            }
+    // 1. Use the new generic processor to filter and sort the data.
+    const rowFilter = (campsite, availability) => {
+        const siteMatchesFilter = !isFilteringBySiteNumber || normalizedSiteNumbersToFilter.includes(normalizeSiteName(campsite.site));
+        if (!siteMatchesFilter) {
+            return false;
         }
-    }
-    filteredRowsData.sort(createSiteSorter(config.sorting.sortFilteredSitesBy));
+
+        if (!availableOnlyConfig && !notReservableOnlyConfig) return true; // Show All
+        if (availableOnlyConfig && notReservableOnlyConfig) return (availability === AVAILABILITY_STATUS.AVAILABLE || availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
+        if (availableOnlyConfig) return (availability === AVAILABILITY_STATUS.AVAILABLE);
+        if (notReservableOnlyConfig) return (availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
+
+        return true; // Fallback
+    };
+
+    const filteredRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.sortFilteredSitesBy);
 
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData, index) => {
@@ -1609,95 +1661,25 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         debugDiv.style.marginTop = '20px';
         debugDiv.style.fontFamily = 'monospace';
         debugDiv.style.whiteSpace = 'pre-wrap';
-        addInfoElement(doc, debugDiv, 'h3', 'Live Debug Info for Filtered Tab');
         const debugPre = doc.createElement('pre');
-        debugDiv.appendChild(debugPre);
-        containerDiv.appendChild(debugDiv);
+        if (config.display.showDebugTab) {
+            addInfoElement(doc, debugDiv, 'h3', 'Live Debug Info for Filtered Tab');
+            debugDiv.appendChild(debugPre);
+            containerDiv.appendChild(debugDiv);
+        }
         let debugText = '';
-        const logDebug = (msg) => { debugText += msg + '\n'; debugPre.textContent = debugText; };
+        const logDebug = (msg) => {
+            if (!config.display.showDebugTab) return;
+            debugText += msg + '\n';
+            debugPre.textContent = debugText;
+        };
         // --- END: In-Tab Debugging ---
 
-        const idsForDetailFetch = [];
-
-        if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
-            // When this flag is true, derive the list of sites to fetch directly
-            // from the configuration, not from the filtered availability results.
-            const siteNumbersToFilterArray = config.siteFilters.siteNumbersToFilter;
-            if (siteNumbersToFilterArray.length > 0 && allCampsitesData) {
-                logDebug(`'fetchDetailsForAllFilteredSites' is TRUE.`);
-                logDebug(`Sites to filter from config: [${siteNumbersToFilterArray.join(', ')}]`);
-                logDebug(`Total campsites in master list (allCampsitesData): ${Object.keys(allCampsitesData).length}`);
-
-                // Create a map for efficient lookup of site name -> campsite_id
-                const siteNameToIdMap = new Map();
-                for (const cId in allCampsitesData) {
-                    const campsite = allCampsitesData[cId];
-                    const normalizedName = normalizeSiteName(campsite.site);
-                    siteNameToIdMap.set(normalizedName, campsite.campsite_id);
-                }
-
-                logDebug(`Built siteNameToIdMap with ${siteNameToIdMap.size} entries.`);
-
-                siteNumbersToFilterArray.forEach(siteName => {
-                    const normalizedLookupName = normalizeSiteName(siteName);
-                    const campsiteId = siteNameToIdMap.get(normalizedLookupName);
-                    if (campsiteId) {
-                        idsForDetailFetch.push(campsiteId);
-                    } else {
-                        logDebug(`- WARN: Could not find campsite_id for site name "${siteName}" (normalized to "${normalizedLookupName}") in the map.`);
-                    }
-                });
-                logDebug(`Resulting idsForDetailFetch: [${idsForDetailFetch.join(', ')}]`);
-            }
-        } else {
-            // When the flag is false, derive the list from the sites that actually
-            // appeared in the filtered availability data.
-            logDebug(`'fetchDetailsForAllFilteredSites' is FALSE.`);
-            const allUniqueIdsInFilteredList = [...new Set(filteredRowsData.map(item => item.campsite_id))];
-            const processedForDetailFetch = new Set();
-
-            allUniqueIdsInFilteredList.forEach(cId => {
-                const entriesForThisCampsite = filteredRowsData.filter(item => item.campsite_id === cId);
-                const isAvailableInFilteredList = entriesForThisCampsite.some(item => item.availability === AVAILABILITY_STATUS.AVAILABLE);
-                const isNotReservableInFilteredList = entriesForThisCampsite.some(item => item.availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
-
-                const shouldFetchForAvailable = config.tabBehavior.fetchDetailsForAvailableFilteredSites && isAvailableInFilteredList;
-                const shouldFetchForNotReservable = config.tabBehavior.fetchDetailsForNotReservableFilteredSites && isNotReservableInFilteredList;
-
-                if ((shouldFetchForAvailable || shouldFetchForNotReservable) && !processedForDetailFetch.has(cId)) {
-                    idsForDetailFetch.push(cId);
-                    processedForDetailFetch.add(cId);
-                }
-            });
-            logDebug(`Resulting idsForDetailFetch from available rows: [${idsForDetailFetch.join(', ')}]`);
-        }
-
-        // If, after all logic, there are no sites to fetch details for, we can exit.
+        const idsForDetailFetch = getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug);
         if (idsForDetailFetch.length === 0) {
             logDebug(`\nCONCLUSION: No site IDs were identified for detail fetching. Exiting callback.`);
             return;
         }
-
-        // Build a map of campsite_id -> site_number for sorting.
-        // Use the master `allCampsitesData` list to ensure we can sort
-        // even if a site has no availability data in the current range.
-        const siteNumberMap = new Map();
-        if (allCampsitesData) {
-            for (const cId in allCampsitesData) {
-                const campsite = allCampsitesData[cId];
-                if (campsite && campsite.site && !siteNumberMap.has(cId)) {
-                    const siteNum = parseInt(campsite.site.match(/\d+/)?.[0] || '0', 10);
-                    siteNumberMap.set(cId, siteNum);
-                }
-            }
-        }
-        logDebug(`\nBuilt siteNumberMap for sorting with ${siteNumberMap.size} entries.`);
-        idsForDetailFetch.sort((idA, idB) => {
-            const siteNumA = siteNumberMap.get(idA) || 0;
-            const siteNumB = siteNumberMap.get(idB) || 0;
-            return siteNumA - siteNumB;
-        });
-        logDebug(`Sorted idsForDetailFetch: [${idsForDetailFetch.join(', ')}]`);
 
         // Log this for debugging purposes
         debugInfo.processing.filteredSiteIdsForDetailFetch = idsForDetailFetch;
@@ -2255,8 +2237,8 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservab
                 const imgElement = doc.createElement('img');
                 imgElement.src = media.URL;
                 imgElement.alt = media.Title || media.Description || `Campsite Image for ${campsiteDetails.CampsiteName}`;
-                imgElement.style.maxWidth = '1000px';
-                imgElement.style.maxHeight = '1000px';
+                imgElement.style.maxWidth = '100%'; // Ensure image is responsive and does not overflow its container.
+                imgElement.style.height = 'auto'; // Maintain aspect ratio.
                 imgElement.style.display = 'block';
                 imgElement.style.marginTop = '10px';
                 detailDiv.appendChild(imgElement);

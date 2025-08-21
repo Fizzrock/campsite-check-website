@@ -350,3 +350,9 @@ td:nth-child(6) {
 .tab-panel {
     display: none; /* All panels hidden by default */
 }
+
+.tab-panel pre {
+    white-space: pre-wrap;   /* Ensures pre-formatted text respects container width and wraps */
+    word-wrap: break-word;   /* Breaks long, unbreakable strings (like URLs in JSON) */
+    font-size: 0.9em;        /* Slightly smaller font for dense data */
+}
