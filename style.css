@@ -152,6 +152,11 @@ td:nth-child(6) {
   color: #ffffff; /* white */
 }
 
+.open-continuation {
+    background-color: #4a90e2; /* Lighter blue for "Extend Only" status */
+    color: #ffffff;
+}
+
 .not-reservable {
     background-color: #cccccc; /* Example: light grey */
     color: #333333; /* Example: dark grey text */

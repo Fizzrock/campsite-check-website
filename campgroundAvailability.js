@@ -265,11 +265,11 @@ const config = {
         showRecAreaMediaOnMainPage: true, // If true, fetches and displays RecArea media on the main page.
 
         // New Tab Toggles
-        showRawJsonTab: false, // If true, opens a new tab with the full raw JSON response from the availability API.
-        showAvailableOnlyTab: false, // If true, opens a new tab with only "Available" sites.
+        showRawJsonTab: true, // If true, opens a new tab with the full raw JSON response from the availability API.
+        showAvailableOnlyTab: true, // If true, opens a new tab with only "Available" sites.
         showFilteredSitesTab: true, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
-        showFullMetadataTab: false, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
-        showCampsitesObjectTab: false, // For debugging, not yet implemented
+        showFullMetadataTab: true, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
+        showCampsitesObjectTab: true, // For debugging, not yet implemented
         showRecGovSearchDataTab: true, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
         showDebugTab: true // If true, opens a final tab with the entire `debugInfo` object for inspection.
     },
@@ -1709,7 +1709,8 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         if (details) {
             const availableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.AVAILABLE).map(row => row.date);
             const notReservableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE).map(row => row.date);
-            renderCampsiteDetailsInTab(details, availableDates, notReservableDates, detailsCell, tr.ownerDocument);
+            const openDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.OPEN).map(row => row.date);
+            renderCampsiteDetailsInTab(details, availableDates, notReservableDates, openDates, detailsCell, tr.ownerDocument);
         } else {
             detailsCell.textContent = `Could not load details for site ${siteName}.`;
             detailsCell.style.padding = '10px';
@@ -1730,12 +1731,21 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
             return false;
         }
 
-        if (!availableOnlyConfig && !notReservableOnlyConfig) return true; // Show All
-        if (availableOnlyConfig && notReservableOnlyConfig) return (availability === AVAILABILITY_STATUS.AVAILABLE || availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
-        if (availableOnlyConfig) return (availability === AVAILABILITY_STATUS.AVAILABLE);
-        if (notReservableOnlyConfig) return (availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
+        // If both are false, it means "Show All", so we don't filter by status.
+        if (!availableOnlyConfig && !notReservableOnlyConfig) {
+            return true;
+        }
 
-        return true; // Fallback
+        const allowedStatuses = [];
+        if (availableOnlyConfig) {
+            // "Available" also includes "Open" (Extend Only) for filtering purposes.
+            allowedStatuses.push(AVAILABILITY_STATUS.AVAILABLE, AVAILABILITY_STATUS.OPEN);
+        }
+        if (notReservableOnlyConfig) {
+            allowedStatuses.push(AVAILABILITY_STATUS.NOT_RESERVABLE);
+        }
+
+        return allowedStatuses.includes(availability);
     };
 
     const filteredRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
@@ -1747,7 +1757,11 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         tr.insertCell().textContent = rowData.site;
         tr.insertCell().textContent = rowData.date;
         const availabilityCell = tr.insertCell();
-        availabilityCell.textContent = rowData.availability;
+        if (rowData.availability === AVAILABILITY_STATUS.OPEN) {
+            availabilityCell.textContent = 'Extend Only';
+        } else {
+            availabilityCell.textContent = rowData.availability;
+        }
         availabilityCell.className = getAvailabilityClass(rowData.availability);
         tr.insertCell().textContent = rowData.quantity;
         tr.insertCell().textContent = rowData.campsite_id;
@@ -1832,7 +1846,8 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                     const campsiteDetails = result.value;
                     const availableDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.AVAILABLE).map(row => row.date);
                     const notReservableDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE).map(row => row.date);
-                    renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, containerDiv, doc);
+                    const openDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.OPEN).map(row => row.date);
+                    renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, openDates, containerDiv, doc);
                 } else if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value)) {
                     console.warn("[displayFilteredSitesInNewTab] Failed to fetch or no data for a campsite detail:", result.reason || "No data returned");
                 }
@@ -1877,6 +1892,10 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 
         const notReservableRows = filteredRowsData.filter(
             row => row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE
+        );
+
+        const openRows = filteredRowsData.filter(
+            row => row.availability === AVAILABILITY_STATUS.OPEN
         );
 
         // 2. Render the "Available" summary box, if applicable
@@ -1928,6 +1947,35 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
             summaryList.style.paddingLeft = '20px';
             Object.keys(notReservableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
                 const dates = notReservableBySite[site].join(', ');
+                const li = doc.createElement('li');
+                li.innerHTML = `<strong>${site}:</strong> ${dates}`;
+                summaryList.appendChild(li);
+            });
+            summaryDiv.appendChild(summaryList);
+            containerDiv.appendChild(summaryDiv);
+        }
+
+        // 4. Render the "Open for Continuation" summary box, if applicable
+        if (openRows.length > 0) {
+            const summaryDiv = doc.createElement('div');
+            summaryDiv.className = 'availability-summary-main';
+            addInfoElement(doc, summaryDiv, 'h3', 'Open for Continuation On (Extend Only)');
+            summaryDiv.style.backgroundColor = '#e7f3ff'; // Light blue
+            summaryDiv.style.border = '1px solid #4a90e2'; // Blue border
+            summaryDiv.style.marginTop = '10px';
+
+            const openBySite = openRows.reduce((acc, row) => {
+                if (!acc[row.site]) {
+                    acc[row.site] = [];
+                }
+                acc[row.site].push(row.date);
+                return acc;
+            }, {});
+
+            const summaryList = doc.createElement('ul');
+            summaryList.style.paddingLeft = '20px';
+            Object.keys(openBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
+                const dates = openBySite[site].join(', ');
                 const li = doc.createElement('li');
                 li.innerHTML = `<strong>${site}:</strong> ${dates}`;
                 summaryList.appendChild(li);
@@ -2267,7 +2315,7 @@ function displayDebugInfoInNewTab(debugData, config) {
  * @param {HTMLElement} parentElement The parent element to append the details to.
  * @param {Document} [doc=document] The document object where rendering occurs.
  */
-function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, parentElement, doc = document) {
+function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, openDates, parentElement, doc = document) {
     if (!campsiteDetails) return;
 
     const detailDiv = doc.createElement('div');
@@ -2302,6 +2350,19 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservab
         notReservableDiv.style.borderRadius = '4px';
         addInfoElement(doc, notReservableDiv, 'p', '').innerHTML = `<strong>Not Reservable on:</strong> ${notReservableDates.join(', ')}`;
         detailDiv.appendChild(notReservableDiv);
+    }
+
+    const isOpen = openDates && openDates.length > 0;
+
+    if (isOpen) {
+        const openDiv = doc.createElement('div');
+        openDiv.style.backgroundColor = '#e7f3ff'; // Light blue
+        openDiv.style.border = '1px solid #4a90e2'; // Blue border
+        openDiv.style.padding = '10px';
+        openDiv.style.marginBottom = '10px';
+        openDiv.style.borderRadius = '4px';
+        addInfoElement(doc, openDiv, 'p', '').innerHTML = `<strong>Open for Continuation on (Extend Only):</strong> ${openDates.join(', ')}`;
+        detailDiv.appendChild(openDiv);
     }
 
     const titleHeader = addInfoElement(doc, detailDiv, 'h3', `Site ${campsiteDetails.CampsiteName} (ID: ${campsiteDetails.CampsiteID})`);
@@ -2436,7 +2497,7 @@ function getAvailabilityClass(availabilityStatus) {
         case AVAILABILITY_STATUS.CLOSED: return "closed";
         case AVAILABILITY_STATUS.NYR: return "NYR";
         case AVAILABILITY_STATUS.AVAILABLE: return "available";
-        case AVAILABILITY_STATUS.OPEN: return "open";
+        case AVAILABILITY_STATUS.OPEN: return "open-continuation";
         case AVAILABILITY_STATUS.NOT_RESERVABLE: return "not-reservable";
         default: return AVAILABILITY_STATUS.UNKNOWN.toLowerCase(); // Ensure class is lowercase
     }
@@ -3118,7 +3179,11 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
         row.insertCell().textContent = itemData.site;
         row.insertCell().textContent = itemData.date;
         const availabilityCell = row.insertCell();
-        availabilityCell.textContent = itemData.availability;
+        if (itemData.availability === AVAILABILITY_STATUS.OPEN) {
+            availabilityCell.textContent = 'Extend Only';
+        } else {
+            availabilityCell.textContent = itemData.availability;
+        }
         availabilityCell.classList.add(getAvailabilityClass(itemData.availability));
         row.insertCell().textContent = itemData.quantity;
         row.insertCell().textContent = itemData.campsite_id;
