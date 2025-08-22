@@ -1535,7 +1535,14 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
         tr.insertCell().textContent = rowData.site;
         tr.insertCell().textContent = rowData.date;
         const availabilityCell = tr.insertCell();
-        availabilityCell.textContent = rowData.availability;
+        if (rowData.availability === AVAILABILITY_STATUS.OPEN) {
+            availabilityCell.textContent = 'Extend Only';
+        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+            availabilityCell.textContent = 'Walk-up';
+            availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
+        } else {
+            availabilityCell.textContent = rowData.availability;
+        }
         availabilityCell.className = getAvailabilityClass(rowData.availability);
         tr.insertCell().textContent = rowData.quantity;
         tr.insertCell().textContent = rowData.campsite_id;
@@ -1546,7 +1553,7 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
     const preTableRenderCallback = (doc, containerDiv) => {
         const summaryDiv = doc.createElement('div');
         summaryDiv.className = 'availability-summary-main';
-        addInfoElement(doc, summaryDiv, 'h3', 'Availability Summary');
+        addInfoElement(doc, summaryDiv, 'h3', 'Availability Counts');
 
         if (availabilityCounts && Object.keys(availabilityCounts).length > 0) {
             const summaryList = doc.createElement('ul');
@@ -1556,7 +1563,15 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
             for (const type in availabilityCounts) {
                 const count = availabilityCounts[type];
                 const listItem = doc.createElement('li');
-                listItem.textContent = `${type}: ${count}`;
+
+                let displayText = type;
+                if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+                    displayText = 'Walk-up (FCFS)';
+                } else if (type === AVAILABILITY_STATUS.OPEN) {
+                    displayText = 'Extend Only';
+                }
+
+                listItem.textContent = `${displayText}: ${count}`;
                 listItem.className = `summary-item ${getAvailabilityClass(type)}`;
                 summaryList.appendChild(listItem);
             }
@@ -1568,7 +1583,7 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
     };
 
     // 3. Configure and call the generic renderer.
-    const pageTitle = `Available Campsites${includeNotReservable ? ' & Not Reservable' : ''} - ${config.api.campgroundId}`;
+    const pageTitle = `Available Campsites${includeNotReservable ? ' & Walk-Up (FCFS)' : ''} - ${config.api.campgroundId}`;
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
 
     await renderTabularDataInNewTab({
@@ -1581,7 +1596,7 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
         requestDateTime: requestDateTime,
         response: response,
         sortDescription: sortDescription,
-        noDataMessage: "No 'Available' or 'Not Reservable' campsites found for the selected period.",
+        noDataMessage: "No 'Available' or 'Walk-Up (FCFS)' campsites found for the selected period.",
         rowBuilder: rowBuilder,
         preTableRenderCallback: preTableRenderCallback,
         postRenderCallback: null
@@ -1993,9 +2008,9 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         if (!availableOnlyConfig && !notReservableOnlyConfig) {
             statusFilterDescription = " (Showing All Statuses)";
         } else if (availableOnlyConfig) {
-            statusFilterDescription = notReservableOnlyConfig ? " (Showing 'Available' OR 'Not Reservable')" : " (Showing 'Available' Only)";
+            statusFilterDescription = notReservableOnlyConfig ? " (Showing 'Available' OR 'Walk-Up (FCFS)')" : " (Showing 'Available' Only)";
         } else if (notReservableOnlyConfig) {
-            statusFilterDescription = " (Showing 'Not Reservable' Only)";
+            statusFilterDescription = " (Showing 'Walk-Up (FCFS)' Only)";
         } else {
             // This case should not be hit with the new UI, but as a fallback:
             statusFilterDescription = " (Showing All Statuses)";
@@ -3395,7 +3410,13 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
     addInfoElement(document, summaryElement, 'h3', "Availability Summary");
     if (Object.keys(availabilityCounts).length > 0) {
         for (const type in availabilityCounts) {
-            addInfoElement(document, summaryElement, 'p', `${type}: ${availabilityCounts[type]}`);
+            let displayText = type;
+            if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+                displayText = 'Walk-up (FCFS)';
+            } else if (type === AVAILABILITY_STATUS.OPEN) {
+                displayText = 'Extend Only';
+            }
+            addInfoElement(document, summaryElement, 'p', `${displayText}: ${availabilityCounts[type]}`);
         }
     } else {
         addInfoElement(document, summaryElement, 'p', "No availability data to summarize for the selected period.");
