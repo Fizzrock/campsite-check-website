@@ -8,10 +8,10 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>
-        <img src="media/campground-solid-full.svg" alt="" style="height: 1em; vertical-align: -0.15em; margin-right: 0.5em;">
-         Campsite Availability Checker
-        <img src="media/campground-solid-full.svg" alt="" style="height: 1em; vertical-align: -0.15em; margin-left: 0.5em;">
+    <h1 class="main-title">
+        <img src="media/campground-solid-full.svg" alt="">
+        <span>Campsite</span><span>Availability</span><span>Checker</span>
+        <img src="media/campground-solid-full.svg" alt="">
     </h1>
 
     <div class="instructions" style="padding-bottom: 1em;">
@@ -59,6 +59,7 @@
                 <label><input type="checkbox" name="showRecGovSearchDataTab" checked> Show Raw Rec.gov Search Tab</label>
                 <label><input type="checkbox" name="showDebugTab" checked> Show Debug Tab</label>
                 <label><input type="checkbox" id="sortBySiteFirst" name="sortBySiteFirst"> Sort by Site first (default is by Date)</label>
+                <label><input type="checkbox" name="showCampsiteIdColumn" id="showCampsiteIdColumn"> Show Campsite ID Column</label>
             </div>
         </fieldset>
 
@@ -71,16 +72,16 @@
 
                 <label for="filteredSitesTableContent">Filtered Sites Table Content:</label>
                 <select id="filteredSitesTableContent" name="filteredSitesTableContent">
-                    <option value="available_or_not_reservable">Show 'Available' & 'Walk-up'</option>
-                    <option value="available_only">Show 'Available' Only</option>
-                    <option value="all">Show All Statuses</option>
+                    <option value="available_or_not_reservable">'Available' & 'Walk-up'</option>
+                    <option value="available_only">'Available' Only</option>
+                    <option value="all">All Statuses</option>
                 </select>
 
                 <label for="filteredSitesDetailFetch">Fetch Details For:</label>
                 <select id="filteredSitesDetailFetch" name="filteredSitesDetailFetch">
-                    <option value="all_filtered">All sites in my filter list</option>
-                    <option value="available_or_not_reservable">Sites that are 'Available' or 'Walk-up'</option>
-                    <option value="only_available">Only sites that have 'Available' dates</option>
+                    <option value="all_filtered">All Filtered Sites</option>
+                    <option value="available_or_not_reservable">'Available' / 'Walk-up' Sites</option>
+                    <option value="only_available">Only 'Available' Sites</option>
                 </select>
 
                 <label for="openDebugTabInNewWindow">Debug Tab:</label>

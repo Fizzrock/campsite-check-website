@@ -1,7 +1,7 @@
 /**
  * =================================================================================================
  * RECREATION.GOV CAMPSITE AVAILABILITY CHECKER
- * Version: 2.3.0
+ * Version: 2.4.0
  * =================================================================================================
  *
  * Description:
@@ -27,10 +27,11 @@
  * - External Presets: Manage favorite campgrounds and site lists in an easy-to-edit `presets.json` file.
  * - Shareable Searches: Generate and copy bookmarkable URLs that contain your exact search configuration, including all UI options.
  * - Secure API Handling: All API calls are routed through a server-side proxy, keeping your API key safe.
+ * - Mobile-First Responsive Design: The user interface, including the configuration form and title, now adapts for a better viewing experience on mobile devices.
  * - Intelligent API Management: Implemented "lazy loading" for site details to prevent API rate-limiting and improve performance. Details are fetched on-demand or capped at a reasonable limit.
  * - Search Constraints: Enforces a maximum 40-day search window and a 30-site filter limit to ensure efficient and predictable queries.
  * - Comprehensive Data Display: Presents detailed information about campgrounds, recreation areas, events, and media,
- *   as well as rich metadata like reservation rules, notices, activities, and facility rates in a clean, organized main page view.
+ *   as well as rich metadata like reservation rules, notices, activities, and facility rates in a clean, organized main page view. Data tables are now cleaner, with configurable columns and explicit row counts for better readability.
  * - Rich Summary Data: Displays at-a-glance information on the main page, including user ratings, price ranges, site counts,
  *   and cell coverage scores, sourced from an additional internal Rec.gov API.
  * - Global Sort Control: A single checkbox now controls the sort order (by Site or by Date) across all data tables for a consistent user experience.
@@ -271,7 +272,10 @@ const config = {
         showFullMetadataTab: true, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
         showCampsitesObjectTab: true, // For debugging, not yet implemented
         showRecGovSearchDataTab: true, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
-        showDebugTab: true // If true, opens a final tab with the entire `debugInfo` object for inspection.
+        showDebugTab: true, // If true, opens a final tab with the entire `debugInfo` object for inspection.
+
+        // Column Toggles
+        showCampsiteIdColumn: false // If true, shows the 'Campsite ID' column in data tables.
     },
     ////////////////////////////////////////
     // --- Behavior Configuration for Tabs ---
@@ -1446,9 +1450,52 @@ async function renderTabularDataInNewTab(options) {
     if (!dataRows || dataRows.length === 0) {
         addInfoElement(document, panel, 'p', noDataMessage);
     } else {
+        const resultCount = dataRows.length;
+        const resultText = `Showing ${resultCount} result${resultCount !== 1 ? 's' : ''}.`;
+        addInfoElement(document, panel, 'p', resultText, 'row-count-info');
+
         if (sortDescription) addInfoElement(document, panel, 'p', sortDescription, 'sort-info');
 
-        const { tbody } = createTableStructure(document, headers, panel);
+        const { table, tbody } = createTableStructure(document, headers, panel);
+
+        // Apply dynamic column widths to make tables more readable
+        const className = `data-table-in-tab-${tabTitle.replace(/[^a-zA-Z0-9]/g, '-')}`;
+        const styleId = `${className}-style`;
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+
+            const cssRules = [
+                `.${className} { table-layout: fixed; width: 100%; margin: 0; }`
+            ];
+            const siteIndex = headers.indexOf('Site');
+            if (siteIndex !== -1) {
+                cssRules.push(`.${className} th:nth-child(${siteIndex + 1}) { width: 25%; } /* Site */`);
+            }
+            const dateIndex = headers.indexOf('Date');
+            if (dateIndex !== -1) {
+                cssRules.push(`.${className} th:nth-child(${dateIndex + 1}) { width: 20%; } /* Date */`);
+            }
+            const availabilityIndex = headers.indexOf('Availability');
+            if (availabilityIndex !== -1) {
+                cssRules.push(`.${className} th:nth-child(${availabilityIndex + 1}) { width: 20%; } /* Availability */`);
+            }
+            const campsiteIdIndex = headers.indexOf('Campsite ID');
+            if (campsiteIdIndex !== -1) {
+                cssRules.push(`.${className} th:nth-child(${campsiteIdIndex + 1}) { width: 20%; } /* Campsite ID */`);
+            }
+            const actionsIndex = headers.indexOf('Actions');
+            if (actionsIndex !== -1) {
+                cssRules.push(`.${className} th:nth-child(${actionsIndex + 1}) { width: 15%; } /* Actions */`);
+            }
+
+            if (cssRules.length > 1) { // More than just the table-layout rule
+                style.textContent = cssRules.join('\n');
+                document.head.appendChild(style);
+            }
+        }
+        table.classList.add(className);
+
         dataRows.forEach((rowData, index) => tbody.appendChild(rowBuilder(document, rowData, index)));
     }
 
@@ -1531,7 +1578,6 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData, index) => {
         const tr = doc.createElement('tr');
-        tr.insertCell().textContent = index + 1;
         tr.insertCell().textContent = rowData.site;
         tr.insertCell().textContent = rowData.date;
         const availabilityCell = tr.insertCell();
@@ -1544,8 +1590,9 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
             availabilityCell.textContent = rowData.availability;
         }
         availabilityCell.className = getAvailabilityClass(rowData.availability);
-        tr.insertCell().textContent = rowData.quantity;
-        tr.insertCell().textContent = rowData.campsite_id;
+        if (config.display.showCampsiteIdColumn) {
+            tr.insertCell().textContent = rowData.campsite_id;
+        }
         return tr;
     };
 
@@ -1590,7 +1637,9 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
         tabTitle: `Available Sites - ${config.api.campgroundId}`,
         pageTitle: pageTitle,
         dataRows: availableRowsData,
-        headers: ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"],
+        headers: ["Site", "Date", "Availability"].concat(
+            config.display.showCampsiteIdColumn ? ["Campsite ID"] : []
+        ),
         config: config,
         allCampsitesData: allCampsitesData,
         requestDateTime: requestDateTime,
@@ -1768,7 +1817,6 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData, index) => {
         const tr = doc.createElement('tr');
-        tr.insertCell().textContent = index + 1;
         tr.insertCell().textContent = rowData.site;
         tr.insertCell().textContent = rowData.date;
         const availabilityCell = tr.insertCell();
@@ -1781,8 +1829,9 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
             availabilityCell.textContent = rowData.availability;
         }
         availabilityCell.className = getAvailabilityClass(rowData.availability);
-        tr.insertCell().textContent = rowData.quantity;
-        tr.insertCell().textContent = rowData.campsite_id;
+        if (config.display.showCampsiteIdColumn) {
+            tr.insertCell().textContent = rowData.campsite_id;
+        }
 
         // If no site filter is active, add a button for lazy-loading details.
         if (!isFilteringBySiteNumber) {
@@ -1877,25 +1926,6 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                 button.addEventListener('click', handleShowDetailsClick);
             });
             logDebug(`Attached 'Show Details' listeners to ${detailButtons.length} buttons.`);
-
-            // Adjust column widths for this specific view to prevent squishing
-            const table = containerDiv.querySelector('table');
-            if (table) {
-                const styleId = 'filtered-sites-lazy-style';
-                if (!doc.getElementById(styleId)) {
-                    const style = doc.createElement('style');
-                    style.id = styleId;
-                    // Give more space to the middle columns and control the Actions column width
-                    style.textContent = `
-                        .filtered-sites-lazy-load th:nth-child(4) { width: 15%; } /* Availability */
-                        .filtered-sites-lazy-load th:nth-child(5) { width: 10%; } /* Quantity */
-                        .filtered-sites-lazy-load th:nth-child(6) { width: 15%; } /* Campsite ID */
-                        .filtered-sites-lazy-load th:nth-child(7) { width: 15%; } /* Actions */
-                    `;
-                    doc.head.appendChild(style);
-                }
-                table.classList.add('filtered-sites-lazy-load');
-            }
         }
     };
 
@@ -2024,7 +2054,10 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
     const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"}) - ${config.api.campgroundId}`;
 
-    const headers = ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"];
+    const headers = ["Site", "Date", "Availability"];
+    if (config.display.showCampsiteIdColumn) {
+        headers.push("Campsite ID");
+    }
     if (!isFilteringBySiteNumber) {
         headers.push("Actions");
     }
@@ -3184,16 +3217,48 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
 
     rowsToSort.sort(createSiteSorter(config.sorting.primarySortKey));
 
+    const resultCount = rowsToSort.length;
+    if (resultCount === 0) {
+        addInfoElement(document, parentElement, 'p', 'No availability data found for the selected period.');
+        return;
+    }
+
+    const resultText = `Showing ${resultCount} result${resultCount !== 1 ? 's' : ''}.`;
+    addInfoElement(document, parentElement, 'p', resultText, 'row-count-info');
+
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
     const mainSortInfo = addInfoElement(document, parentElement, 'p', sortDescription, 'sort-info');
     if (mainSortInfo) mainSortInfo.style.fontStyle = 'italic';
 
-    const headers = ["#", "Site", "Date", "Availability", "Quantity", "Campsite ID"];
-    const { tbody } = createTableStructure(document, headers, parentElement);
+    const headers = ["Site", "Date", "Availability"];
+    if (config.display.showCampsiteIdColumn) {
+        headers.push("Campsite ID");
+    }
+    const { table, tbody } = createTableStructure(document, headers, parentElement);
 
-    rowsToSort.forEach((itemData, index) => {
+    // Apply column widths to make the table more readable
+    const styleId = 'main-table-style';
+    if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        const cssRules = [
+            '.main-availability-table { table-layout: fixed; width: 100%; margin: 0; }',
+            '.main-availability-table th:nth-child(1) { width: 50%; } /* Site */',
+            '.main-availability-table th:nth-child(2) { width: 25%; } /* Date */',
+            '.main-availability-table th:nth-child(3) { width: 25%; } /* Availability */'
+        ];
+        if (config.display.showCampsiteIdColumn) {
+            // Rebalance widths if the 4th column is present
+            cssRules[1] = '.main-availability-table th:nth-child(1) { width: 30%; } /* Site */';
+            cssRules.push('.main-availability-table th:nth-child(4) { width: 20%; } /* Campsite ID */');
+        }
+        style.textContent = cssRules.join('\n');
+        document.head.appendChild(style);
+    }
+    table.classList.add('main-availability-table');
+
+    rowsToSort.forEach((itemData) => {
         const row = tbody.insertRow();
-        row.insertCell().textContent = index + 1;
         row.insertCell().textContent = itemData.site;
         row.insertCell().textContent = itemData.date;
         const availabilityCell = row.insertCell();
@@ -3206,8 +3271,9 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
             availabilityCell.textContent = itemData.availability;
         }
         availabilityCell.classList.add(getAvailabilityClass(itemData.availability));
-        row.insertCell().textContent = itemData.quantity;
-        row.insertCell().textContent = itemData.campsite_id;
+        if (config.display.showCampsiteIdColumn) {
+            row.insertCell().textContent = itemData.campsite_id;
+        }
     });
 }
 
