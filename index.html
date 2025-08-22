@@ -1,11 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Campsite Availability Checker</title>
+    <link rel="icon" href="media/campground-solid-full.svg" type="image/svg+xml">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Campsite Availability Checker <span id="api-status-badge"></span></h1>
+    <h1>
+        <img src="media/campground-solid-full.svg" alt="" style="height: 1em; vertical-align: -0.15em; margin-right: 0.5em;">
+         Campsite Availability Checker
+        <img src="media/campground-solid-full.svg" alt="" style="height: 1em; vertical-align: -0.15em; margin-left: 0.5em;">
+    </h1>
 
     <div class="instructions" style="padding-bottom: 1em;">
         <p><strong>How to use:</strong></p>
@@ -48,7 +55,6 @@
                 <label><input type="checkbox" name="showRawJsonTab" checked> Show Raw JSON Tab</label>
                 <label><input type="checkbox" name="showAvailableOnlyTab" checked> Show Available Sites Tab</label>
                 <label><input type="checkbox" name="showFilteredSitesTab" checked> Show Filtered Sites Tab</label>
-                <label><input type="checkbox" name="showAvailabilitySummaryTab"> Show Availability Summary Tab</label>
                 <label><input type="checkbox" name="showFullMetadataTab"> Show Full Metadata Tab</label>
                 <label><input type="checkbox" name="showRecGovSearchDataTab" checked> Show Rec.gov Search Data Tab</label>
                 <label><input type="checkbox" name="showDebugTab" checked> Show Debug Tab</label>

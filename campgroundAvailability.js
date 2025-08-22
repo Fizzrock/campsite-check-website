@@ -268,7 +268,6 @@ const config = {
         showRawJsonTab: false, // If true, opens a new tab with the full raw JSON response from the availability API.
         showAvailableOnlyTab: false, // If true, opens a new tab with only "Available" sites.
         showFilteredSitesTab: true, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
-        showAvailabilitySummaryTab: false, // If true, opens a new tab with a summary of availability counts.
         showFullMetadataTab: false, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
         showCampsitesObjectTab: false, // For debugging, not yet implemented
         showRecGovSearchDataTab: true, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
@@ -346,7 +345,7 @@ const debugInfo = {
 
 // --- Global state for cooldown timer ---
 let cooldownIntervalId = null;
-const COOLDOWN_SECONDS = 30;
+const COOLDOWN_SECONDS = 60;
 
 // --- Constants for Availability Statuses ---
 const AVAILABILITY_STATUS = {
@@ -1323,6 +1322,19 @@ async function renderAllOutputs(allData, config) {
 
     console.log("[renderAllOutputs] Proceeding to open new tabs based on configuration.");
 
+    // Then render the additional tabs in a specific order
+
+    // Filtered and Available sites tabs first
+    console.log('[renderAllOutputs] Checking if showFilteredSitesTab is enabled:', config.display.showFilteredSitesTab);
+    if (config.display.showFilteredSitesTab) {
+        await displayFilteredSitesInNewTab(campsites, config, ids.facilityId, requestDateTime, response);
+    }
+    console.log('[renderAllOutputs] Checking if showAvailableOnlyTab is enabled:', config.display.showAvailableOnlyTab);
+    if (config.display.showAvailableOnlyTab) {
+        await displayAvailableSitesInNewTab(campsites, availabilityCounts, config, requestDateTime, response);
+    }
+
+    // Raw data tabs
     console.log('[renderAllOutputs] Checking if showRawJsonTab is enabled:', config.display.showRawJsonTab);
     if (config.display.showRawJsonTab) {
         const jsonData = (finalAvailabilityData.campsites && Object.keys(finalAvailabilityData.campsites).length > 0) ? finalAvailabilityData : { message: "No combined availability data to show." };
@@ -1336,20 +1348,9 @@ async function renderAllOutputs(allData, config) {
     if (config.display.showRecGovSearchDataTab && recGovSearchData) {
         displayDataInNewTab(recGovSearchData, `Rec.gov Search Data - ${config.api.campgroundId}`);
     }
-    console.log('[renderAllOutputs] Checking if showAvailabilitySummaryTab is enabled:', config.display.showAvailabilitySummaryTab);
-    if (config.display.showAvailabilitySummaryTab) {
-        displayAvailabilitySummaryInNewTab(availabilityCounts, config, requestDateTime, response);
-    }
-    console.log('[renderAllOutputs] Checking if showAvailableOnlyTab is enabled:', config.display.showAvailableOnlyTab);
-    if (config.display.showAvailableOnlyTab) {
-        await displayAvailableSitesInNewTab(campsites, config, requestDateTime, response);
-    }
-    console.log('[renderAllOutputs] Checking if showFilteredSitesTab is enabled:', config.display.showFilteredSitesTab);
-    if (config.display.showFilteredSitesTab) {
-        await displayFilteredSitesInNewTab(campsites, config, ids.facilityId, requestDateTime, response);
-    }
 
     // For diagnostics, always render the debug tab last.
+    // Debug tab last
     console.log('[renderAllOutputs] Checking if showDebugTab is enabled:', config.display.showDebugTab);
     if (config.display.showDebugTab) {
         displayDebugInfoInNewTab(debugInfo, config);
@@ -1518,7 +1519,7 @@ function processAndSortAvailability(allCampsitesData, config, rowFilterPredicate
  * @param {Date} requestDateTime The timestamp of the data request.
  * @param {Response} response The fetch response object.
  */
-async function displayAvailableSitesInNewTab(allCampsitesData, config, requestDateTime, response) {
+async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCounts, config, requestDateTime, response) {
     const includeNotReservable = config.tabBehavior.includeNotReservableInAvailableTab;
 
     // 1. Use the new generic processor to filter and sort the data.
@@ -1541,6 +1542,31 @@ async function displayAvailableSitesInNewTab(allCampsitesData, config, requestDa
         return tr;
     };
 
+    // New pre-table callback to render the summary
+    const preTableRenderCallback = (doc, containerDiv) => {
+        const summaryDiv = doc.createElement('div');
+        summaryDiv.className = 'availability-summary-main';
+        addInfoElement(doc, summaryDiv, 'h3', 'Availability Summary');
+
+        if (availabilityCounts && Object.keys(availabilityCounts).length > 0) {
+            const summaryList = doc.createElement('ul');
+            summaryList.style.listStyleType = 'none';
+            summaryList.style.paddingLeft = '0';
+
+            for (const type in availabilityCounts) {
+                const count = availabilityCounts[type];
+                const listItem = doc.createElement('li');
+                listItem.textContent = `${type}: ${count}`;
+                listItem.className = `summary-item ${getAvailabilityClass(type)}`;
+                summaryList.appendChild(listItem);
+            }
+            summaryDiv.appendChild(summaryList);
+        } else {
+            addInfoElement(doc, summaryDiv, 'p', "No availability data to summarize for the selected period.");
+        }
+        containerDiv.appendChild(summaryDiv);
+    };
+
     // 3. Configure and call the generic renderer.
     const pageTitle = `Available Campsites${includeNotReservable ? ' & Not Reservable' : ''} - ${config.api.campgroundId}`;
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
@@ -1557,7 +1583,8 @@ async function displayAvailableSitesInNewTab(allCampsitesData, config, requestDa
         sortDescription: sortDescription,
         noDataMessage: "No 'Available' or 'Not Reservable' campsites found for the selected period.",
         rowBuilder: rowBuilder,
-        postRenderCallback: null // No post-render action needed for this tab.
+        preTableRenderCallback: preTableRenderCallback,
+        postRenderCallback: null
     });
 }
 
@@ -1951,48 +1978,6 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         rowBuilder: rowBuilder,
         postRenderCallback: postRenderCallback
     });
-}
-
-/**
- * Renders a new tab displaying a simple summary of availability counts (e.g., "Available: 50").
- * @param {object} availabilityCountsData An object with availability statuses as keys and counts as values.
- * @param {object} config The main configuration object.
- * @param {Date} currentRequestDateTime The timestamp of the data request.
- * @param {Response} responseFromFetch The fetch response object.
- */
-function displayAvailabilitySummaryInNewTab(availabilityCountsData, config, currentRequestDateTime, responseFromFetch) {
-    const currentCampgroundId = config.api.campgroundId;
-    const { filterStartDate, filterEndDate, startDate } = config.filters;
-    const tabTitle = `Availability Summary - ${currentCampgroundId}`;
-
-    const panel = createInPageTab(tabTitle);
-    if (!panel) {
-        return;
-    }
-
-    addInfoElement(document, panel, 'h1', `Availability Summary - ${currentCampgroundId}`);
-
-    // Display Date Range
-    const dateRangeText = getDateRangeDisplayText(filterStartDate, filterEndDate, startDate);
-    addInfoElement(document, panel, 'p', '').innerHTML = dateRangeText;
-
-    addRequestInfoElements(document, panel, currentRequestDateTime, responseFromFetch);
-    if (Object.keys(availabilityCountsData).length > 0) {
-        const summaryList = document.createElement('ul');
-        summaryList.style.listStyleType = 'none';
-        summaryList.style.paddingLeft = '0';
-
-        for (const type in availabilityCountsData) {
-            const count = availabilityCountsData[type];
-            const listItem = document.createElement('li');
-            listItem.textContent = `${type}: ${count}`;
-            listItem.className = `summary-item ${getAvailabilityClass(type)}`; // Add class for styling
-            summaryList.appendChild(listItem);
-        }
-        panel.appendChild(summaryList);
-    } else {
-        addInfoElement(document, panel, 'p', "No availability data to summarize for the selected period.");
-    }
 }
 
 /**
@@ -3195,6 +3180,21 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         // Render the main header, facility details, and rec area details into their container.
         renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, recGovSearchData, ids);
 
+        // Create and insert the API status badge placeholder. It will be populated by renderApiStatusBadge.
+        const badgePlaceholder = document.createElement('div');
+        badgePlaceholder.style.textAlign = 'left';
+        badgePlaceholder.style.marginBottom = '10px';
+        const badge = document.createElement('span');
+        badge.id = 'api-status-badge';
+        badge.style.display = 'none'; // Initially hidden
+        badgePlaceholder.appendChild(badge);
+
+        const ratingsSection = detailsContainer.querySelector('.ratings-section');
+        if (ratingsSection) {
+            // Insert the badge container right before the ratings section.
+            ratingsSection.parentNode.insertBefore(badgePlaceholder, ratingsSection);
+        }
+
         // Render primary image from search data, if available
         if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
             renderPrimaryImage(detailsContainer, recGovSearchData.results[0]);
@@ -3964,7 +3964,6 @@ function injectApiStatusBadgeStyles() {
             vertical-align: baseline;
             border-radius: 0.375rem;
             color: #fff;
-            margin-left: 10px;
         }
         .api-status-success {
             background-color: #28a745; /* Green */
