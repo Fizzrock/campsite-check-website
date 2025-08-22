@@ -1759,6 +1759,9 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         const availabilityCell = tr.insertCell();
         if (rowData.availability === AVAILABILITY_STATUS.OPEN) {
             availabilityCell.textContent = 'Extend Only';
+        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+            availabilityCell.textContent = 'Walk-up';
+            availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
         } else {
             availabilityCell.textContent = rowData.availability;
         }
@@ -1930,7 +1933,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         if (notReservableRows.length > 0) {
             const summaryDiv = doc.createElement('div');
             summaryDiv.className = 'availability-summary-main';
-            addInfoElement(doc, summaryDiv, 'h3', 'Not Reservable Summary for Filtered Sites');
+            addInfoElement(doc, summaryDiv, 'h3', 'Walk-up (FCFS) Summary');
             summaryDiv.style.backgroundColor = '#fffbe6'; // Light yellow
             summaryDiv.style.border = '1px solid #ffeeba'; // Yellow border
             summaryDiv.style.marginTop = '10px'; // Add space between summaries
@@ -2348,7 +2351,7 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservab
         notReservableDiv.style.padding = '10px';
         notReservableDiv.style.marginBottom = '10px';
         notReservableDiv.style.borderRadius = '4px';
-        addInfoElement(doc, notReservableDiv, 'p', '').innerHTML = `<strong>Not Reservable on:</strong> ${notReservableDates.join(', ')}`;
+        addInfoElement(doc, notReservableDiv, 'p', '').innerHTML = `<strong>Walk-up (FCFS) on:</strong> ${notReservableDates.join(', ')}`;
         detailDiv.appendChild(notReservableDiv);
     }
 
@@ -2361,7 +2364,7 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservab
         openDiv.style.padding = '10px';
         openDiv.style.marginBottom = '10px';
         openDiv.style.borderRadius = '4px';
-        addInfoElement(doc, openDiv, 'p', '').innerHTML = `<strong>Open for Continuation on (Extend Only):</strong> ${openDates.join(', ')}`;
+        addInfoElement(doc, openDiv, 'p', '').innerHTML = `<strong>Extend Only on:</strong> ${openDates.join(', ')}`;
         detailDiv.appendChild(openDiv);
     }
 
@@ -2498,7 +2501,7 @@ function getAvailabilityClass(availabilityStatus) {
         case AVAILABILITY_STATUS.NYR: return "NYR";
         case AVAILABILITY_STATUS.AVAILABLE: return "available";
         case AVAILABILITY_STATUS.OPEN: return "open-continuation";
-        case AVAILABILITY_STATUS.NOT_RESERVABLE: return "not-reservable";
+        case AVAILABILITY_STATUS.NOT_RESERVABLE: return "walk-up";
         default: return AVAILABILITY_STATUS.UNKNOWN.toLowerCase(); // Ensure class is lowercase
     }
 }
@@ -3181,6 +3184,9 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
         const availabilityCell = row.insertCell();
         if (itemData.availability === AVAILABILITY_STATUS.OPEN) {
             availabilityCell.textContent = 'Extend Only';
+        } else if (itemData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+            availabilityCell.textContent = 'Walk-up';
+            availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
         } else {
             availabilityCell.textContent = itemData.availability;
         }

@@ -157,9 +157,9 @@ td:nth-child(6) {
     color: #ffffff;
 }
 
-.not-reservable {
-    background-color: #cccccc; /* Example: light grey */
-    color: #333333; /* Example: dark grey text */
+.walk-up {
+    background-color: #fff3cd; /* Light orange */
+    color: #664d03;
 }
 
 .unknown {
