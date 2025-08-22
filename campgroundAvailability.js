@@ -344,6 +344,10 @@ const debugInfo = {
     errors: [] // Each entry: { context, message, stack? }
 };
 
+// --- Global state for cooldown timer ---
+let cooldownIntervalId = null;
+const COOLDOWN_SECONDS = 60;
+
 // --- Constants for Availability Statuses ---
 const AVAILABILITY_STATUS = {
     AVAILABLE: "Available",
@@ -1139,6 +1143,17 @@ function formatUTCDate(dateObj) {
 }
 
 /**
+ * Formats a Date object into a "MM-DD" string for concise table display.
+ * @param {Date} dateObj The date to format.
+ * @returns {string} The formatted date string (e.g., "08-14").
+ */
+function formatDateForTableDisplay(dateObj) {
+    const month = (dateObj.getUTCMonth() + 1).toString().padStart(2, '0');
+    const day = dateObj.getUTCDate().toString().padStart(2, '0');
+    return `${month}/${day}`;
+}
+
+/**
  * Generates a human-readable string describing the active date filter range.
  * @param {string|null} filterStartStr The start date of the filter (YYYY-MM-DD).
  * @param {string|null} filterEndStr The end date of the filter (YYYY-MM-DD).
@@ -1206,6 +1221,7 @@ function openInNewWindow(title) {
  */
 function createTableStructure(doc, headersArray, parentElement) {
     const table = doc.createElement('table');
+    table.style.width = '100%';
     const thead = doc.createElement('thead');
     const tbody = doc.createElement('tbody');
     const headerRow = doc.createElement('tr');
@@ -1479,7 +1495,7 @@ function processAndSortAvailability(allCampsitesData, config, rowFilterPredicate
                     const dateObj = new Date(dateStr);
                     rowsData.push({
                         site: campsite.site,
-                        date: formatUTCDate(dateObj),
+                        date: formatDateForTableDisplay(dateObj),
                         originalDate: dateObj,
                         availability: currentAvailability,
                         quantity: campsite.quantities[dateStr],
@@ -2030,6 +2046,21 @@ function renderUserRatings(parentElement, searchResult) {
 }
 
 /**
+ * Determines a color based on a cell coverage score.
+ * @param {number} score The score from 0 to 10.
+ * @returns {string} A hex color code.
+ */
+function getCellScoreColor(score) {
+    if (score >= 7.0) {
+        return '#28a745'; // Green
+    }
+    if (score >= 4.0) {
+        return '#ffc107'; // Orange/Yellow
+    }
+    return '#dc3545'; // Red
+}
+
+/**
  * Renders at-a-glance information like site count and types.
  * @param {HTMLElement} parentElement The parent element to append the info to.
  * @param {object} searchResult The result object from the rec.gov search API.
@@ -2081,10 +2112,29 @@ function renderAtAGlanceInfo(parentElement, searchResult) {
     if (hasCellInfo) {
         const coverage = searchResult.aggregate_cell_coverage;
         const score = (coverage * 10).toFixed(1);
-        const raw = coverage.toFixed(4);
-        const p = addInfoElement(doc, glanceContainer, 'p', '');
-        p.style.margin = hasSiteInfo ? '8px 0 0 0' : '0'; // Add top margin if there's site info above
-        p.innerHTML = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${raw})`;
+        const color = getCellScoreColor(score);
+
+        const wrapper = doc.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.margin = hasSiteInfo ? '8px 0 0 0' : '0';
+
+        const icon = doc.createElement('div');
+        icon.style.width = '1em';
+        icon.style.height = '1em';
+        icon.style.marginRight = '8px';
+        icon.style.backgroundColor = color;
+        icon.style.webkitMask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
+        icon.style.mask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
+        icon.style.webkitMaskSize = 'contain';
+        icon.style.maskSize = 'contain';
+
+        const textSpan = doc.createElement('span');
+        textSpan.innerHTML = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${coverage.toFixed(4)})`;
+
+        wrapper.appendChild(icon);
+        wrapper.appendChild(textSpan);
+        glanceContainer.appendChild(wrapper);
     }
 
     if (hasPriceInfo) {
@@ -2423,16 +2473,36 @@ function createSiteSorter(primarySortKey = 'date') {
         // --- Site Name Comparison Logic (handles alphanumeric) ---
         const siteNameA = a.site || '';
         const siteNameB = b.site || '';
-        const matchA = siteNameA.match(/\d+/);
-        const matchB = siteNameB.match(/\d+/);
-        const numA = matchA ? parseInt(matchA[0], 10) : Infinity;
-        const numB = matchB ? parseInt(matchB[0], 10) : Infinity;
+
+        const getParts = (siteName) => {
+            // Regular expression to capture a non-digit prefix and a numeric part.
+            const regex = /^(\D*)(\d+.*)$/;
+            const match = siteName.match(regex);
+
+            if (match) {
+                // Handles 'A001', 'Loop-A-10', etc.
+                // parseInt will stop at the first non-digit, handling '10a' correctly.
+                return { prefix: match[1], num: parseInt(match[2], 10) };
+            }
+
+            // Handles purely numeric site names like '101'.
+            const num = parseInt(siteName, 10);
+            if (!isNaN(num) && String(num) === siteName) {
+                return { prefix: '', num };
+            }
+
+            // Handles purely alphabetic site names like 'WALKUP'.
+            return { prefix: siteName, num: 0 };
+        };
+
+        const partsA = getParts(siteNameA);
+        const partsB = getParts(siteNameB);
 
         let siteComparison;
-        if (numA !== numB) {
-            siteComparison = numA - numB;
+        if (partsA.prefix !== partsB.prefix) {
+            siteComparison = partsA.prefix.localeCompare(partsB.prefix);
         } else {
-            siteComparison = siteNameA.localeCompare(siteNameB);
+            siteComparison = partsA.num - partsB.num;
         }
 
         // --- Date Comparison Logic ---
@@ -2442,9 +2512,36 @@ function createSiteSorter(primarySortKey = 'date') {
         if (primarySortKey === 'site') {
             return siteComparison !== 0 ? siteComparison : dateComparison;
         }
+
         // Default to 'date' as primary
         return dateComparison !== 0 ? dateComparison : siteComparison;
     };
+}
+
+/**
+ * Starts a cooldown timer on the submit button, disabling it and showing a countdown.
+ * @param {HTMLButtonElement} button The submit button element.
+ */
+function startCooldown(button) {
+    if (cooldownIntervalId) {
+        clearInterval(cooldownIntervalId);
+    }
+
+    let secondsRemaining = COOLDOWN_SECONDS;
+    button.disabled = true;
+    button.textContent = `Please wait (${secondsRemaining}s)...`;
+
+    cooldownIntervalId = setInterval(() => {
+        secondsRemaining--;
+        if (secondsRemaining > 0) {
+            button.textContent = `Please wait (${secondsRemaining}s)...`;
+        } else {
+            clearInterval(cooldownIntervalId);
+            cooldownIntervalId = null;
+            button.disabled = false;
+            button.textContent = 'Run Availability Check';
+        }
+    }, 1000);
 }
 
 // --- Robust Date Parsing Function ---
@@ -3008,7 +3105,7 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
                 if (isDateInRange(dateStr, config.filters.filterStartDate, config.filters.filterEndDate)) {
                     rowsToSort.push({
                         site: campsite.site,
-                        date: formatUTCDate(new Date(dateStr)),
+                        date: formatDateForTableDisplay(new Date(dateStr)),
                         originalDate: new Date(dateStr),
                         availability: campsite.availabilities[dateStr],
                         quantity: campsite.quantities[dateStr],
@@ -3301,6 +3398,37 @@ function generateApiSummary(apiCalls) {
 }
 
 /**
+ * Renders a status badge next to the main title indicating API call success or failure.
+ * @param {object} summary The API summary object from `generateApiSummary`.
+ */
+function renderApiStatusBadge(summary) {
+    const badge = document.getElementById('api-status-badge');
+    if (!badge) {
+        console.warn("API status badge element not found.");
+        return;
+    }
+
+    // Reset badge state
+    badge.textContent = '';
+    badge.className = '';
+    badge.style.display = 'none';
+
+    if (!summary || summary.totalCalls === 0) {
+        return; // Don't show the badge if no API calls were made
+    }
+
+    if (summary.failedCalls > 0) {
+        badge.textContent = `API: ${summary.failedCalls} Failed`;
+        badge.className = 'api-status-failure';
+    } else {
+        badge.textContent = 'API: OK';
+        badge.className = 'api-status-success';
+    }
+
+    badge.style.display = 'inline-block';
+}
+
+/**
  * The main entry point and execution flow for the script.
  * It prepares the configuration, fetches all data, and then triggers the rendering process.
  * @param {object} config The initial configuration object.
@@ -3324,6 +3452,9 @@ async function runAvailabilityCheck(config) {
     } finally {
         // Generate the API call summary before finalizing the debug object.
         debugInfo.api.summary = generateApiSummary(debugInfo.api.calls);
+        if (typeof document !== 'undefined') {
+            renderApiStatusBadge(debugInfo.api.summary);
+        }
 
         debugInfo.timestamps.end = new Date().toISOString();
         console.log("Script execution finished. Final debug object:", debugInfo);
@@ -3497,28 +3628,55 @@ async function handleFormSubmit(event) {
     console.log('[handleFormSubmit] Form submitted. Preventing default page reload.');
     event.preventDefault();
 
-    // Prepare the new tabbed interface for results
-    const resultsTabsContainer = document.getElementById('results-tabs-container');
-    const tabButtonsContainer = document.getElementById('tab-buttons');
-    const tabPanelsContainer = document.getElementById('tab-panels');
-    console.log('[handleFormSubmit] resultsTabsContainer found:', !!resultsTabsContainer);
-
-    if (resultsTabsContainer && tabButtonsContainer && tabPanelsContainer) {
-        // Clear any previous results
-        console.log('[handleFormSubmit] Clearing previous tab results.');
-        tabButtonsContainer.innerHTML = '';
-        tabPanelsContainer.innerHTML = '';
-
-        // Make the tab system visible for the new results
-        console.log('[handleFormSubmit] Setting resultsTabsContainer display to "block".');
-        resultsTabsContainer.style.display = 'block';
-    } else {
-        console.error("Could not find tab container elements. Aborting run.");
+    const submitButton = document.querySelector('#config-form button[type="submit"]');
+    if (!submitButton) {
+        console.error("Submit button not found.");
         return;
     }
 
-    const dynamicConfig = buildConfigFromForm();
-    await runAvailabilityCheck(dynamicConfig);
+    // This check prevents re-submission if the button is already disabled (loading or on cooldown)
+    if (submitButton.disabled) {
+        console.log('[handleFormSubmit] Submit button is already disabled. Aborting.');
+        return;
+    }
+
+    try {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Loading...';
+
+        // Clear previous API status badge
+        const apiBadge = document.getElementById('api-status-badge');
+        if (apiBadge) {
+            apiBadge.style.display = 'none';
+            apiBadge.className = '';
+        }
+
+        // Prepare the new tabbed interface for results
+        const resultsTabsContainer = document.getElementById('results-tabs-container');
+        const tabButtonsContainer = document.getElementById('tab-buttons');
+        const tabPanelsContainer = document.getElementById('tab-panels');
+        console.log('[handleFormSubmit] resultsTabsContainer found:', !!resultsTabsContainer);
+
+        if (resultsTabsContainer && tabButtonsContainer && tabPanelsContainer) {
+            // Clear any previous results
+            console.log('[handleFormSubmit] Clearing previous tab results.');
+            tabButtonsContainer.innerHTML = '';
+            tabPanelsContainer.innerHTML = '';
+
+            // Make the tab system visible for the new results
+            console.log('[handleFormSubmit] Setting resultsTabsContainer display to "block".');
+            resultsTabsContainer.style.display = 'block';
+        } else {
+            console.error("Could not find tab container elements. Aborting run.");
+            return;
+        }
+
+        const dynamicConfig = buildConfigFromForm();
+        await runAvailabilityCheck(dynamicConfig);
+    } finally {
+        // Instead of re-enabling immediately, start the cooldown.
+        startCooldown(submitButton);
+    }
 }
 
 /**
@@ -3779,7 +3937,44 @@ async function initializePage() {
     copyLinkButton.addEventListener('click', handleCopyLink);
     presetSelector.addEventListener('change', handlePresetChange);
 
+    injectApiStatusBadgeStyles();
+
     console.log("Page initialized. Ready for user input.");
+}
+
+/**
+ * Injects the CSS for the API status badge into the document's head.
+ * This keeps the styling self-contained within the script.
+ */
+function injectApiStatusBadgeStyles() {
+    const styleId = 'api-status-badge-styles';
+    if (document.getElementById(styleId)) return;
+
+    const css = `
+        #api-status-badge {
+            display: inline-block;
+            padding: 0.25em 0.6em;
+            font-size: 0.75em;
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: baseline;
+            border-radius: 0.375rem;
+            color: #fff;
+            margin-left: 10px;
+        }
+        .api-status-success {
+            background-color: #28a745; /* Green */
+        }
+        .api-status-failure {
+            background-color: #dc3545; /* Red */
+        }
+    `;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = css;
+    document.head.appendChild(style);
 }
 
 // --- Script Entry Point ---
