@@ -346,7 +346,7 @@ const debugInfo = {
 
 // --- Global state for cooldown timer ---
 let cooldownIntervalId = null;
-const COOLDOWN_SECONDS = 60;
+const COOLDOWN_SECONDS = 30;
 
 // --- Constants for Availability Statuses ---
 const AVAILABILITY_STATUS = {
@@ -2111,7 +2111,7 @@ function renderAtAGlanceInfo(parentElement, searchResult) {
 
     if (hasCellInfo) {
         const coverage = searchResult.aggregate_cell_coverage;
-        const score = (coverage * 10).toFixed(1);
+        const score = Math.round(coverage * 10);
         const color = getCellScoreColor(score);
 
         const wrapper = doc.createElement('div');
@@ -2530,6 +2530,7 @@ function startCooldown(button) {
     let secondsRemaining = COOLDOWN_SECONDS;
     button.disabled = true;
     button.textContent = `Please wait (${secondsRemaining}s)...`;
+    button.title = `To ensure fair use of the service, a ${COOLDOWN_SECONDS}-second cooldown is active between searches.`;
 
     cooldownIntervalId = setInterval(() => {
         secondsRemaining--;
@@ -2540,6 +2541,7 @@ function startCooldown(button) {
             cooldownIntervalId = null;
             button.disabled = false;
             button.textContent = 'Run Availability Check';
+            button.title = '';
         }
     }, 1000);
 }
