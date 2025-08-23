@@ -508,9 +508,21 @@ td:nth-child(6) {
         padding: 6px; /* Reduce padding on mobile for more content space */
     }
 
+    .collapsible-details {
+        /* Reduce horizontal padding on mobile to give tables more space */
+        padding-left: 5px;
+        padding-right: 5px;
+    }
+
     th,
     td {
         font-size: 0.7em; /* Make table text smaller on mobile */
         padding: 6px; /* Reduce cell padding for a more compact view */
+    }
+
+    table {
+        width: 100%;
+        margin-left: 0;
+        margin-right: 0;
     }
 }
