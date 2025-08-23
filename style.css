@@ -378,6 +378,55 @@ td:nth-child(6) {
     font-size: 0.9em;        /* Slightly smaller font for dense data */
 }
 
+/* --- Collapsible/Accordion Styles for Filtered Sites Tab --- */
+.collapsible-summary {
+    background-color: #f1f1f1;
+    color: #444;
+    cursor: pointer;
+    padding: 12px 18px;
+    width: 100%;
+    border: none;
+    border-top: 1px solid #ddd;
+    text-align: left;
+    outline: none;
+    font-size: 1.1em;
+    transition: background-color 0.2s ease;
+    position: relative; /* For positioning the pseudo-element */
+}
+
+.collapsible-summary:hover {
+    background-color: #e2e2e2;
+}
+
+.collapsible-summary.active {
+    background-color: #dcdcdc;
+}
+
+/* Style for the plus/minus icon */
+.collapsible-summary::after {
+    content: '+';
+    font-size: 1.3em;
+    color: #777;
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.collapsible-summary.active::after {
+    content: "−";
+}
+
+.collapsible-details {
+    padding: 15px 18px;
+    background-color: #fdfdfd;
+    display: none; /* Hidden by default */
+    overflow: hidden;
+    border-left: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+    border-bottom: 1px solid #ddd;
+}
+
 /* ==========================================================================
    Responsive Design for Mobile
    ========================================================================== */

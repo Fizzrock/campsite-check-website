@@ -378,6 +378,27 @@ const SUMMARY_DISPLAY_ORDER = [
 ];
 
 /**
+ * Defines icons for the compact summary view in the "Filtered Sites" tab.
+ */
+const COMPACT_SUMMARY_ICONS = {
+    [AVAILABILITY_STATUS.AVAILABLE]: '✅',
+    [AVAILABILITY_STATUS.NOT_RESERVABLE]: '🚶',
+    [AVAILABILITY_STATUS.OPEN]: '➡️',
+    [AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF]: '❌'
+};
+
+/**
+ * Defines the display order for the compact summary.
+ */
+const COMPACT_SUMMARY_DISPLAY_ORDER = [
+    AVAILABILITY_STATUS.AVAILABLE,
+    AVAILABILITY_STATUS.NOT_RESERVABLE,
+    AVAILABILITY_STATUS.OPEN,
+    AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF
+];
+
+
+/**
  * @typedef {object} IdCollection
  * @property {string} campgroundId - The original campground ID from the config.
  * @property {string} facilityId - The resolved RIDB facility ID.
@@ -1946,9 +1967,52 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                     const availableDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.AVAILABLE).map(row => row.date);
                     const notReservableDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE).map(row => row.date);
                     const openDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.OPEN).map(row => row.date);
-                    renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, openDates, containerDiv, doc);
+                    const cutoffDates = filteredRowsData.filter(row => row.campsite_id === campsiteDetails.CampsiteID && row.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF).map(row => row.date);
+
+                    // Calculate per-site summary for the button
+                    const siteSummary = {
+                        [AVAILABILITY_STATUS.AVAILABLE]: availableDates.length,
+                        [AVAILABILITY_STATUS.NOT_RESERVABLE]: notReservableDates.length,
+                        [AVAILABILITY_STATUS.OPEN]: openDates.length,
+                        [AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF]: cutoffDates.length
+                    };
+
+                    const compactSummaryText = generateCompactSummaryString(siteSummary);
+                    const tooltipText = generateCompactSummaryTooltip(siteSummary);
+
+                    // Create the summary button
+                    const summaryButton = doc.createElement('button');
+                    summaryButton.className = 'collapsible-summary';
+                    const baseButtonText = `Site: ${campsiteDetails.CampsiteName} (ID: ${campsiteDetails.CampsiteID})`;
+                    summaryButton.textContent = `${baseButtonText}${compactSummaryText}`;
+                    summaryButton.title = `${baseButtonText}\n${tooltipText}`;
+                    containerDiv.appendChild(summaryButton);
+
+                    // Create the details panel
+                    const detailsPanel = doc.createElement('div');
+                    detailsPanel.className = 'collapsible-details';
+                    containerDiv.appendChild(detailsPanel);
+
+                    // Render the campsite details into the newly created detailsPanel
+                    renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservableDates, openDates, detailsPanel, doc);
                 } else if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value)) {
                     console.warn("[displayFilteredSitesInNewTab] Failed to fetch or no data for a campsite detail:", result.reason || "No data returned");
+                }
+            });
+
+            // Add the single event listener for all collapsible sections
+            containerDiv.addEventListener('click', (event) => {
+                if (event.target.classList.contains('collapsible-summary')) {
+                    const button = event.target;
+                    button.classList.toggle('active');
+                    const content = button.nextElementSibling;
+                    if (content) {
+                        if (content.style.display === 'block') {
+                            content.style.display = 'none';
+                        } else {
+                            content.style.display = 'block';
+                        }
+                    }
                 }
             });
         } else {
@@ -2535,6 +2599,49 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservab
     }
 
     parentElement.appendChild(detailDiv);
+}
+
+/**
+ * Generates a compact, icon-based summary string for a site's availability.
+ * @param {object} siteSummary - An object with availability statuses as keys and their counts as values.
+ * @returns {string} A formatted string like " | ✅ 3 | 🚶 2".
+ */
+function generateCompactSummaryString(siteSummary) {
+    const parts = [];
+    COMPACT_SUMMARY_DISPLAY_ORDER.forEach(type => {
+        if (siteSummary[type] > 0) {
+            const icon = COMPACT_SUMMARY_ICONS[type];
+            if (icon) { // Ensure icon is defined before adding
+                parts.push(`${icon} ${siteSummary[type]}`);
+            }
+        }
+    });
+    return parts.length > 0 ? ` | ${parts.join(' | ')}` : '';
+}
+
+/**
+ * Generates a detailed, multi-line tooltip string for a site's availability summary.
+ * @param {object} siteSummary - An object with availability statuses as keys and their counts as values.
+ * @returns {string} A formatted string for the title attribute, e.g., "Available: 3 day(s)\nWalk-up (FCFS): 2 day(s)".
+ */
+function generateCompactSummaryTooltip(siteSummary) {
+    const parts = [];
+    const statusToText = {
+        [AVAILABILITY_STATUS.AVAILABLE]: 'Available',
+        [AVAILABILITY_STATUS.NOT_RESERVABLE]: 'Walk-up (FCFS)',
+        [AVAILABILITY_STATUS.OPEN]: 'Extend Only',
+        [AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF]: 'Cutoff (Walk-up)'
+    };
+
+    COMPACT_SUMMARY_DISPLAY_ORDER.forEach(type => {
+        if (siteSummary[type] > 0) {
+            const text = statusToText[type];
+            if (text) { // Ensure text is defined
+                parts.push(`${text}: ${siteSummary[type]} day(s)`);
+            }
+        }
+    });
+    return parts.join('\n');
 }
 
 /**
