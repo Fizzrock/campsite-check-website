@@ -1432,6 +1432,7 @@ async function renderAllOutputs(allData, config) {
  * @property {RowBuilderCallback} rowBuilder A function that builds a `<tr>` from a data row.
  * @property {function(Document, HTMLElement): void} [preTableRenderCallback] An optional function to run before the main table is rendered.
  * @property {PostRenderCallback} [postRenderCallback] An optional async function to run after the table is rendered.
+ * @property {boolean} [isTableCollapsible=false] If true, the table will be rendered inside a collapsible accordion.
  */
 
 /**
@@ -1454,7 +1455,8 @@ async function renderTabularDataInNewTab(options) {
         noDataMessage,
         rowBuilder,
         preTableRenderCallback,
-        postRenderCallback
+        postRenderCallback,
+        isTableCollapsible = false
     } = options;
 
     const panel = createInPageTab(tabTitle);
@@ -1486,49 +1488,66 @@ async function renderTabularDataInNewTab(options) {
 
     addRequestInfoElements(document, panel, requestDateTime, response);
 
+    let parentForTable = panel; // Default parent for the table
+
+    if (isTableCollapsible && dataRows && dataRows.length > 0) {
+        const tableToggleButton = document.createElement('button');
+        tableToggleButton.className = 'collapsible-summary';
+        tableToggleButton.textContent = `Show Full Results Table (${dataRows.length} rows)`;
+        tableToggleButton.style.marginTop = '20px';
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'collapsible-details'; // Hidden by default
+
+        panel.appendChild(tableToggleButton);
+        panel.appendChild(tableContainer);
+
+        tableToggleButton.addEventListener('click', (event) => {
+            event.stopPropagation(); // Prevent the generic collapsible handler in the parent from firing
+            tableToggleButton.classList.toggle('active');
+            const isVisible = tableContainer.style.display === 'block';
+            tableContainer.style.display = isVisible ? 'none' : 'block';
+            tableToggleButton.textContent = isVisible
+                ? `Show Full Results Table (${dataRows.length} rows)`
+                : `Hide Full Results Table (${dataRows.length} rows)`;
+        });
+
+        parentForTable = tableContainer; // The table will now be rendered inside this container
+    }
+
     if (!dataRows || dataRows.length === 0) {
         addInfoElement(document, panel, 'p', noDataMessage);
     } else {
         const resultCount = dataRows.length;
         const resultText = `Showing ${resultCount} result${resultCount !== 1 ? 's' : ''}.`;
-        addInfoElement(document, panel, 'p', resultText, 'row-count-info');
+        addInfoElement(document, parentForTable, 'p', resultText, 'row-count-info');
 
-        if (sortDescription) addInfoElement(document, panel, 'p', sortDescription, 'sort-info');
+        if (sortDescription) addInfoElement(document, parentForTable, 'p', sortDescription, 'sort-info');
 
-        const { table, tbody } = createTableStructure(document, headers, panel);
+        const { table, tbody } = createTableStructure(document, headers, parentForTable);
 
         // Apply dynamic column widths to make tables more readable
         const className = `data-table-in-tab-${tabTitle.replace(/[^a-zA-Z0-9]/g, '-')}`;
         const styleId = `${className}-style`;
         if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-
             const cssRules = [
                 `.${className} { table-layout: fixed; width: 100%; margin: 0; }`
             ];
             const siteIndex = headers.indexOf('Site');
-            if (siteIndex !== -1) {
-                cssRules.push(`.${className} th:nth-child(${siteIndex + 1}) { width: 25%; } /* Site */`);
-            }
             const dateIndex = headers.indexOf('Date');
-            if (dateIndex !== -1) {
-                cssRules.push(`.${className} th:nth-child(${dateIndex + 1}) { width: 20%; } /* Date */`);
-            }
             const availabilityIndex = headers.indexOf('Availability');
-            if (availabilityIndex !== -1) {
-                cssRules.push(`.${className} th:nth-child(${availabilityIndex + 1}) { width: 20%; } /* Availability */`);
-            }
             const campsiteIdIndex = headers.indexOf('Campsite ID');
-            if (campsiteIdIndex !== -1) {
-                cssRules.push(`.${className} th:nth-child(${campsiteIdIndex + 1}) { width: 20%; } /* Campsite ID */`);
-            }
             const actionsIndex = headers.indexOf('Actions');
-            if (actionsIndex !== -1) {
-                cssRules.push(`.${className} th:nth-child(${actionsIndex + 1}) { width: 15%; } /* Actions */`);
-            }
 
-            if (cssRules.length > 1) { // More than just the table-layout rule
+            if (siteIndex !== -1) cssRules.push(`.${className} th:nth-child(${siteIndex + 1}) { width: 25%; } /* Site */`);
+            if (dateIndex !== -1) cssRules.push(`.${className} th:nth-child(${dateIndex + 1}) { width: 20%; } /* Date */`);
+            if (availabilityIndex !== -1) cssRules.push(`.${className} th:nth-child(${availabilityIndex + 1}) { width: 20%; } /* Availability */`);
+            if (campsiteIdIndex !== -1) cssRules.push(`.${className} th:nth-child(${campsiteIdIndex + 1}) { width: 20%; } /* Campsite ID */`);
+            if (actionsIndex !== -1) cssRules.push(`.${className} th:nth-child(${actionsIndex + 1}) { width: 15%; } /* Actions */`);
+
+            if (cssRules.length > 1) {
+                const style = document.createElement('style');
+                style.id = styleId;
                 style.textContent = cssRules.join('\n');
                 document.head.appendChild(style);
             }
@@ -1538,7 +1557,7 @@ async function renderTabularDataInNewTab(options) {
         dataRows.forEach((rowData, index) => tbody.appendChild(rowBuilder(document, rowData, index)));
     }
 
-    if (postRenderCallback) await postRenderCallback(document, panel);
+    if (postRenderCallback) await postRenderCallback(document, panel); // The callback still receives the main panel for context
 }
 
 /**
@@ -1697,7 +1716,8 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
         noDataMessage: "No 'Available' or 'Walk-Up (FCFS)' campsites found for the selected period.",
         rowBuilder: rowBuilder,
         preTableRenderCallback: preTableRenderCallback,
-        postRenderCallback: null
+        postRenderCallback: null,
+        isTableCollapsible: true
     });
 }
 
@@ -1909,7 +1929,8 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         debugDiv.style.fontFamily = 'monospace';
         debugDiv.style.whiteSpace = 'pre-wrap';
         const debugPre = doc.createElement('pre');
-        if (config.display.showDebugTab) {
+        // Keep this code for potential future debugging, but hide it from view.
+        if (false && config.display.showDebugTab) {
             addInfoElement(doc, debugDiv, 'h3', 'Live Debug Info for Filtered Tab');
             debugDiv.appendChild(debugPre);
             containerDiv.appendChild(debugDiv);
@@ -2171,7 +2192,8 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         sortDescription: sortDescription,
         noDataMessage: "No campsites found matching the specified filters and date range.",
         rowBuilder: rowBuilder,
-        postRenderCallback: postRenderCallback
+        postRenderCallback: postRenderCallback,
+        isTableCollapsible: true
     });
 }
 
@@ -3347,7 +3369,7 @@ function renderOtherMetadata(parentElement, metadata) {
  * @param {Response} response The raw fetch response object for cache info.
  * @param {object} config The script's configuration object.
  */
-function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, response, config) {
+function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, response, config) { // eslint-disable-line no-unused-vars
     if (!config.display.showMainDataTable) {
         addInfoElement(document, parentElement, 'p', "Main data table display is disabled by configuration.", "warning-message");
         return;
@@ -3385,18 +3407,38 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
         return;
     }
 
+    const tableToggleButton = document.createElement('button');
+    tableToggleButton.className = 'collapsible-summary';
+    tableToggleButton.textContent = `Show Main Availability Table (${resultCount} rows)`;
+    tableToggleButton.style.marginTop = '20px';
+
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'collapsible-details'; // Hidden by default
+
+    parentElement.appendChild(tableToggleButton);
+    parentElement.appendChild(tableContainer);
+
+    tableToggleButton.addEventListener('click', () => {
+        tableToggleButton.classList.toggle('active');
+        const isVisible = tableContainer.style.display === 'block';
+        tableContainer.style.display = isVisible ? 'none' : 'block';
+        tableToggleButton.textContent = isVisible
+            ? `Show Main Availability Table (${resultCount} rows)`
+            : `Hide Main Availability Table (${resultCount} rows)`;
+    });
+
     const resultText = `Showing ${resultCount} result${resultCount !== 1 ? 's' : ''}.`;
-    addInfoElement(document, parentElement, 'p', resultText, 'row-count-info');
+    addInfoElement(document, tableContainer, 'p', resultText, 'row-count-info');
 
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
-    const mainSortInfo = addInfoElement(document, parentElement, 'p', sortDescription, 'sort-info');
+    const mainSortInfo = addInfoElement(document, tableContainer, 'p', sortDescription, 'sort-info');
     if (mainSortInfo) mainSortInfo.style.fontStyle = 'italic';
 
     const headers = ["Site", "Date", "Availability"];
     if (config.display.showCampsiteIdColumn) {
         headers.push("Campsite ID");
     }
-    const { table, tbody } = createTableStructure(document, headers, parentElement);
+    const { table, tbody } = createTableStructure(document, headers, tableContainer);
 
     // Apply column widths to make the table more readable
     const styleId = 'main-table-style';
