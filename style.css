@@ -173,6 +173,11 @@ td:nth-child(6) {
     color: #664d03;
 }
 
+.cutoff {
+    background-color: #60532b; /* Darker gold for cutoff */
+    color: #f3d26e;
+}
+
 .unknown {
     background-color: #ff00ff; /* magenta */
 }

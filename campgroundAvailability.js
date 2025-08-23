@@ -337,7 +337,8 @@ const debugInfo = {
     processing: {
         // Note: combinedCampsites can be large and is omitted to keep the debug object clean.
         // It can be inspected via the "Raw JSON" tab if needed.
-        availabilityCounts: null,
+        availabilityCounts: null, // Summary for the FILTERED date range
+        fullAvailabilitySummary: null, // Summary for the ENTIRE fetched data range
         filteredSiteIdsForDetailFetch: []
     },
     rendering: {
@@ -358,9 +359,23 @@ const AVAILABILITY_STATUS = {
     CLOSED: "Closed",
     OPEN: "Open",
     NYR: "NYR", // Not Yet Released
+    NOT_AVAILABLE_CUTOFF: "Not Available Cutoff",
     NOT_RESERVABLE: "Not Reservable",
     UNKNOWN: "Unknown" // For default/fallback
 };
+
+/**
+ * Defines the display order for items in the availability summary sections.
+ */
+const SUMMARY_DISPLAY_ORDER = [
+    AVAILABILITY_STATUS.AVAILABLE,
+    AVAILABILITY_STATUS.NOT_RESERVABLE,
+    AVAILABILITY_STATUS.OPEN,    
+    AVAILABILITY_STATUS.RESERVED,
+    AVAILABILITY_STATUS.NYR,
+    AVAILABILITY_STATUS.CLOSED,
+    AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF,
+];
 
 /**
  * @typedef {object} IdCollection
@@ -1312,6 +1327,9 @@ async function renderAllOutputs(allData, config) {
 
     const finalAvailabilityData = { campsites: combinedCampsites };
 
+    // Calculate and store the full, unfiltered summary for debugging.
+    debugInfo.processing.fullAvailabilitySummary = calculateFullAvailabilitySummary(combinedCampsites);
+
     console.log("[renderAllOutputs] Processing data for rendering. FacilityDetails:", facilityDetails ? "Data present" : "No data");
     console.log("[renderAllOutputs] Combined campsites data:", finalAvailabilityData.campsites ? `${Object.keys(finalAvailabilityData.campsites).length} sites` : "No data");
 
@@ -1586,6 +1604,10 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
         } else if (rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
             availabilityCell.textContent = 'Walk-up';
             availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
+        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
+            availabilityCell.textContent = 'Cutoff';
+            availabilityCell.title = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
+            availabilityCell.className = getAvailabilityClass(rowData.availability); // Use a specific class
         } else {
             availabilityCell.textContent = rowData.availability;
         }
@@ -1607,21 +1629,27 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
             summaryList.style.listStyleType = 'none';
             summaryList.style.paddingLeft = '0';
 
-            for (const type in availabilityCounts) {
-                const count = availabilityCounts[type];
-                const listItem = doc.createElement('li');
+            SUMMARY_DISPLAY_ORDER.forEach(type => {
+                if (availabilityCounts[type]) {
+                    const count = availabilityCounts[type];
+                    const listItem = doc.createElement('li');
 
-                let displayText = type;
-                if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-                    displayText = 'Walk-up (FCFS)';
-                } else if (type === AVAILABILITY_STATUS.OPEN) {
-                    displayText = 'Extend Only';
+                    let displayText = type;
+                    if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+                        displayText = 'Walk-up (FCFS)';
+                    } else if (type === AVAILABILITY_STATUS.OPEN) {
+                        displayText = 'Extend Only';
+                    } else if (type === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
+                        displayText = 'Cutoff (Walk-up)';
+                    } else if (type === AVAILABILITY_STATUS.NYR) {
+                        displayText = 'Not Yet Released';
+                    }
+
+                    listItem.textContent = `${displayText}: ${count}`;
+                    listItem.className = `summary-item ${getAvailabilityClass(type)}`;
+                    summaryList.appendChild(listItem);
                 }
-
-                listItem.textContent = `${displayText}: ${count}`;
-                listItem.className = `summary-item ${getAvailabilityClass(type)}`;
-                summaryList.appendChild(listItem);
-            }
+            });
             summaryDiv.appendChild(summaryList);
         } else {
             addInfoElement(doc, summaryDiv, 'p', "No availability data to summarize for the selected period.");
@@ -1825,6 +1853,10 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         } else if (rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
             availabilityCell.textContent = 'Walk-up';
             availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
+        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
+            availabilityCell.textContent = 'Cutoff';
+            availabilityCell.title = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
+            availabilityCell.className = getAvailabilityClass(rowData.availability);
         } else {
             availabilityCell.textContent = rowData.availability;
         }
@@ -2506,6 +2538,28 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservab
 }
 
 /**
+ * Calculates a summary of all availability statuses from the raw combined data,
+ * ignoring any date filters. This is used for the debug output.
+ * @param {object} combinedCampsites The combined campsites data object from all fetched months.
+ * @returns {object} An object with availability statuses as keys and their counts as values.
+ */
+function calculateFullAvailabilitySummary(combinedCampsites) {
+    const summary = {};
+    if (!combinedCampsites) return summary;
+
+    for (const campsiteId in combinedCampsites) {
+        const campsite = combinedCampsites[campsiteId];
+        if (campsite && campsite.availabilities) {
+            for (const date in campsite.availabilities) {
+                const status = campsite.availabilities[date];
+                summary[status] = (summary[status] || 0) + 1;
+            }
+        }
+    }
+    return summary;
+}
+
+/**
  * Processes the raw, combined availability data from the API.
  * It primarily calculates the summary counts of each availability status
  * within the configured date range.
@@ -2548,6 +2602,7 @@ function getAvailabilityClass(availabilityStatus) {
         case AVAILABILITY_STATUS.CLOSED: return "closed";
         case AVAILABILITY_STATUS.NYR: return "NYR";
         case AVAILABILITY_STATUS.AVAILABLE: return "available";
+        case AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF: return "cutoff";
         case AVAILABILITY_STATUS.OPEN: return "open-continuation";
         case AVAILABILITY_STATUS.NOT_RESERVABLE: return "walk-up";
         default: return AVAILABILITY_STATUS.UNKNOWN.toLowerCase(); // Ensure class is lowercase
@@ -3267,6 +3322,10 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
         } else if (itemData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
             availabilityCell.textContent = 'Walk-up';
             availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
+        } else if (itemData.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
+            availabilityCell.textContent = 'Cutoff';
+            availabilityCell.title = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
+            availabilityCell.classList.add(getAvailabilityClass(itemData.availability));
         } else {
             availabilityCell.textContent = itemData.availability;
         }
@@ -3475,15 +3534,21 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
     summaryElement.style.fontSize = "1.1rem";
     addInfoElement(document, summaryElement, 'h3', "Availability Summary");
     if (Object.keys(availabilityCounts).length > 0) {
-        for (const type in availabilityCounts) {
-            let displayText = type;
-            if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-                displayText = 'Walk-up (FCFS)';
-            } else if (type === AVAILABILITY_STATUS.OPEN) {
-                displayText = 'Extend Only';
+        SUMMARY_DISPLAY_ORDER.forEach(type => {
+            if (availabilityCounts[type]) {
+                let displayText = type;
+                if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+                    displayText = 'Walk-up (FCFS)';
+                } else if (type === AVAILABILITY_STATUS.OPEN) {
+                    displayText = 'Extend Only';
+                } else if (type === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
+                    displayText = 'Cutoff (Walk-up)';
+                } else if (type === AVAILABILITY_STATUS.NYR) {
+                    displayText = 'Not Yet Released';
+                }
+                addInfoElement(document, summaryElement, 'p', `${displayText}: ${availabilityCounts[type]}`);
             }
-            addInfoElement(document, summaryElement, 'p', `${displayText}: ${availabilityCounts[type]}`);
-        }
+        });
     } else {
         addInfoElement(document, summaryElement, 'p', "No availability data to summarize for the selected period.");
     }
