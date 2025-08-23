@@ -350,7 +350,7 @@ const debugInfo = {
 
 // --- Global state for cooldown timer ---
 let cooldownIntervalId = null;
-const COOLDOWN_SECONDS = 60;
+const COOLDOWN_SECONDS = 30;
 
 // --- Constants for Availability Statuses ---
 const AVAILABILITY_STATUS = {
@@ -1370,26 +1370,26 @@ async function renderAllOutputs(allData, config) {
     // Filtered and Available sites tabs first
     console.log('[renderAllOutputs] Checking if showFilteredSitesTab is enabled:', config.display.showFilteredSitesTab);
     if (config.display.showFilteredSitesTab) {
-        await displayFilteredSitesInNewTab(campsites, config, ids.facilityId, requestDateTime, response);
+        await displayFilteredSitesInNewTab(campsites, config, ids.facilityId, requestDateTime, response, campgroundMetadata);
     }
     console.log('[renderAllOutputs] Checking if showAvailableOnlyTab is enabled:', config.display.showAvailableOnlyTab);
     if (config.display.showAvailableOnlyTab) {
-        await displayAvailableSitesInNewTab(campsites, availabilityCounts, config, requestDateTime, response);
+        await displayAvailableSitesInNewTab(campsites, availabilityCounts, config, requestDateTime, response, campgroundMetadata);
     }
 
     // Raw data tabs
     console.log('[renderAllOutputs] Checking if showRawJsonTab is enabled:', config.display.showRawJsonTab);
     if (config.display.showRawJsonTab) {
         const jsonData = (finalAvailabilityData.campsites && Object.keys(finalAvailabilityData.campsites).length > 0) ? finalAvailabilityData : { message: "No combined availability data to show." };
-        displayDataInNewTab(jsonData, `Full API Response (Combined) - ${config.api.campgroundId}`);
+        displayDataInNewTab(jsonData, `Full API Response (Combined)`);
     }
     console.log('[renderAllOutputs] Checking if showFullMetadataTab is enabled:', config.display.showFullMetadataTab);
     if (config.display.showFullMetadataTab && campgroundMetadata) {
-        displayDataInNewTab(campgroundMetadata, `Full Campground Metadata - ${config.api.campgroundId}`);
+        displayDataInNewTab(campgroundMetadata, `Full Campground Metadata`);
     }
     console.log('[renderAllOutputs] Checking if showRecGovSearchDataTab is enabled:', config.display.showRecGovSearchDataTab);
     if (config.display.showRecGovSearchDataTab && recGovSearchData) {
-        displayDataInNewTab(recGovSearchData, `Rec.gov Search Data - ${config.api.campgroundId}`);
+        displayDataInNewTab(recGovSearchData, `Rec.gov Search Data`);
     }
 
     // For diagnostics, always render the debug tab last.
@@ -1526,38 +1526,74 @@ async function renderTabularDataInNewTab(options) {
 
         const { table, tbody } = createTableStructure(document, headers, parentForTable);
 
-        // Apply dynamic column widths to make tables more readable
-        const className = `data-table-in-tab-${tabTitle.replace(/[^a-zA-Z0-9]/g, '-')}`;
-        const styleId = `${className}-style`;
-        if (!document.getElementById(styleId)) {
-            const cssRules = [
-                `.${className} { table-layout: fixed; width: 100%; margin: 0; }`
-            ];
-            const siteIndex = headers.indexOf('Site');
-            const dateIndex = headers.indexOf('Date');
-            const availabilityIndex = headers.indexOf('Availability');
-            const campsiteIdIndex = headers.indexOf('Campsite ID');
-            const actionsIndex = headers.indexOf('Actions');
-
-            if (siteIndex !== -1) cssRules.push(`.${className} th:nth-child(${siteIndex + 1}) { width: 25%; } /* Site */`);
-            if (dateIndex !== -1) cssRules.push(`.${className} th:nth-child(${dateIndex + 1}) { width: 20%; } /* Date */`);
-            if (availabilityIndex !== -1) cssRules.push(`.${className} th:nth-child(${availabilityIndex + 1}) { width: 20%; } /* Availability */`);
-            if (campsiteIdIndex !== -1) cssRules.push(`.${className} th:nth-child(${campsiteIdIndex + 1}) { width: 20%; } /* Campsite ID */`);
-            if (actionsIndex !== -1) cssRules.push(`.${className} th:nth-child(${actionsIndex + 1}) { width: 15%; } /* Actions */`);
-
-            if (cssRules.length > 1) {
-                const style = document.createElement('style');
-                style.id = styleId;
-                style.textContent = cssRules.join('\n');
-                document.head.appendChild(style);
-            }
-        }
-        table.classList.add(className);
+        applyTableColumnStyles(table, headers, document, tabTitle);
 
         dataRows.forEach((rowData, index) => tbody.appendChild(rowBuilder(document, rowData, index)));
     }
 
     if (postRenderCallback) await postRenderCallback(document, panel); // The callback still receives the main panel for context
+}
+
+/**
+ * A centralized utility to apply dynamic, percentage-based column widths to a table.
+ * This ensures all data tables in the application have a consistent and readable layout.
+ * It creates a unique CSS class for the table and injects a <style> block into the
+ * document's <head> to control column widths.
+ *
+ * @param {HTMLTableElement} tableElement The <table> element to style.
+ * @param {string[]} headers An array of the table's header strings.
+ * @param {Document} doc The document object where the table resides.
+ * @param {string} baseClassName A base name to generate a unique class for the table.
+ */
+function applyTableColumnStyles(tableElement, headers, doc, baseClassName) {
+    const className = `data-table-${baseClassName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+    const styleId = `${className}-style`;
+
+    // Remove the old style block if it exists, to ensure styles are fresh on every run.
+    const existingStyle = doc.getElementById(styleId);
+    if (existingStyle) {
+        existingStyle.remove();
+    }
+
+    const cssRules = [
+        `.${className} { table-layout: fixed; width: 100%; margin: 0; }`
+    ];
+
+    const siteIndex = headers.indexOf('Site');
+    const dateIndex = headers.indexOf('Date');
+    const availabilityIndex = headers.indexOf('Availability');
+    const campsiteIdIndex = headers.indexOf('Campsite ID');
+    const actionsIndex = headers.indexOf('Actions');
+
+    const hasCampsiteId = campsiteIdIndex !== -1;
+    const hasActions = actionsIndex !== -1;
+
+    let siteWidth, dateWidth, availabilityWidth, campsiteIdWidth, actionsWidth;
+
+    // Determine column widths based on the combination of visible columns.
+    if (hasCampsiteId && hasActions) { // 5 columns
+        siteWidth = 15; dateWidth = 15; availabilityWidth = 30; campsiteIdWidth = 20; actionsWidth = 20;
+    } else if (hasCampsiteId && !hasActions) { // 4 columns (Site, Date, Avail, ID)
+        siteWidth = 20; dateWidth = 20; availabilityWidth = 30; campsiteIdWidth = 30;
+    } else if (!hasCampsiteId && hasActions) { // 4 columns (Site, Date, Avail, Actions)
+        siteWidth = 20; dateWidth = 20; availabilityWidth = 30; actionsWidth = 30;
+    } else { // 3 columns (Site, Date, Avail)
+        siteWidth = 25; dateWidth = 25; availabilityWidth = 50;
+    }
+
+    // Add rules for each column that exists in the headers array.
+    if (siteIndex !== -1) cssRules.push(`.${className} th:nth-child(${siteIndex + 1}) { width: ${siteWidth}%; } /* Site */`);
+    if (dateIndex !== -1) cssRules.push(`.${className} th:nth-child(${dateIndex + 1}) { width: ${dateWidth}%; } /* Date */`);
+    if (availabilityIndex !== -1) cssRules.push(`.${className} th:nth-child(${availabilityIndex + 1}) { width: ${availabilityWidth}%; } /* Availability */`);
+    if (campsiteIdIndex !== -1) cssRules.push(`.${className} th:nth-child(${campsiteIdIndex + 1}) { width: ${campsiteIdWidth}%; } /* Campsite ID */`);
+    if (actionsIndex !== -1) cssRules.push(`.${className} th:nth-child(${actionsIndex + 1}) { width: ${actionsWidth}%; } /* Actions */`);
+
+    const style = doc.createElement('style');
+    style.id = styleId;
+    style.textContent = cssRules.join('\n');
+    doc.head.appendChild(style);
+
+    tableElement.classList.add(className);
 }
 
 /**
@@ -1624,7 +1660,7 @@ function processAndSortAvailability(allCampsitesData, config, rowFilterPredicate
  * @param {Date} requestDateTime The timestamp of the data request.
  * @param {Response} response The fetch response object.
  */
-async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCounts, config, requestDateTime, response) {
+async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCounts, config, requestDateTime, response, campgroundMetadata) {
     const includeNotReservable = config.tabBehavior.includeNotReservableInAvailableTab;
 
     // 1. Use the new generic processor to filter and sort the data.
@@ -1698,11 +1734,11 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
     };
 
     // 3. Configure and call the generic renderer.
-    const pageTitle = `Available Campsites${includeNotReservable ? ' & Walk-Up (FCFS)' : ''} - ${config.api.campgroundId}`;
-    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
+    const pageTitle = `Available Campsites${includeNotReservable ? ' & Walk-Up (FCFS)' : ''} - ${campgroundMetadata?.facility_name || config.api.campgroundId}`;
+    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
 
     await renderTabularDataInNewTab({
-        tabTitle: `Available Sites - ${config.api.campgroundId}`,
+        tabTitle: 'Available Sites',
         pageTitle: pageTitle,
         dataRows: availableRowsData,
         headers: ["Site", "Date", "Availability"].concat(
@@ -1806,7 +1842,7 @@ function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, lo
  * @param {Date} requestDateTime The timestamp of the data request.
  * @param {Response} response The fetch response object.
  */
-async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRidbFacilityId, requestDateTime, response) {
+async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRidbFacilityId, requestDateTime, response, campgroundMetadata) {
     const campsiteDetailsCache = new Map();
 
     // This handler is defined here to have access to the function's scope (cache, config, etc.)
@@ -2004,7 +2040,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
                     // Create the summary button
                     const summaryButton = doc.createElement('button');
                     summaryButton.className = 'collapsible-summary';
-                    const baseButtonText = `Site: ${campsiteDetails.CampsiteName} (ID: ${campsiteDetails.CampsiteID})`;
+                    const baseButtonText = `Site: ${campsiteDetails.CampsiteName}`;
                     summaryButton.textContent = `${baseButtonText}${compactSummaryText}`;
                     summaryButton.title = `${baseButtonText}\n${tooltipText}`;
                     containerDiv.appendChild(summaryButton);
@@ -2167,9 +2203,9 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         containerDiv.appendChild(filterDescriptionHeader);
     };
 
-    const pageTitle = `Filtered Campsite Availability - ${config.api.campgroundId}`;
-    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted primarily by Site, then by Date." : "Data sorted primarily by Date, then by Site.";
-    const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"}) - ${config.api.campgroundId}`;
+    const pageTitle = `Filtered Campsite Availability - ${campgroundMetadata?.facility_name || config.api.campgroundId}`;
+    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
+    const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"})`;
 
     const headers = ["Site", "Date", "Availability"];
     if (config.display.showCampsiteIdColumn) {
@@ -2446,7 +2482,7 @@ function createDownloadLink(doc, jsonData, filename) {
  * @param {object} config The configuration object for the current run.
  */
 function displayDebugInfoInNewTab(debugData, config) {
-    const tabTitle = `Debug Info - ${config.api.campgroundId}`;
+    const tabTitle = 'Debug Info';
     const downloadFilename = `debug_info_${config.api.campgroundId}_${new Date().toISOString().split('T')[0]}.json`;
 
     if (config.tabBehavior.openDebugTabInNewWindow) {
@@ -2962,7 +2998,7 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
 
     if (facilityDetails.ORGANIZATION?.[0]?.OrgName) addDetail("Managed By", facilityDetails.ORGANIZATION[0].OrgName);
     if (facilityDetails.RECAREA?.[0]?.RecAreaName) addDetail("Recreation Area", facilityDetails.RECAREA[0].RecAreaName);
-    addDetail("Keywords", facilityDetails.Keywords);
+    if (facilityDetails.Keywords) addDetail("Keywords", facilityDetails.Keywords.replace(/,/g, ', '));
     addDetail("Reservable", facilityDetails.Reservable ? "Yes" : "No");
     addDetail("Enabled", facilityDetails.Enabled ? "Yes" : "No");
     addDetail("Last Updated", facilityDetails.LastUpdatedDate);
@@ -2992,7 +3028,7 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
             const lon = recAreaDetails.RecAreaLongitude;
             addRecAreaDetail("Coordinates", `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank">${lat}, ${lon} (View on Map)</a>`, true);
         }
-        addRecAreaDetail("Keywords", recAreaDetails.Keywords);
+        if (recAreaDetails.Keywords) addRecAreaDetail("Keywords", recAreaDetails.Keywords.replace(/,/g, ', '));
         addRecAreaDetail("Last Updated", recAreaDetails.LastUpdatedDate);
         parentElement.appendChild(recAreaContainer);
     }
@@ -3440,26 +3476,7 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
     }
     const { table, tbody } = createTableStructure(document, headers, tableContainer);
 
-    // Apply column widths to make the table more readable
-    const styleId = 'main-table-style';
-    if (!document.getElementById(styleId)) {
-        const style = document.createElement('style');
-        style.id = styleId;
-        const cssRules = [
-            '.main-availability-table { table-layout: fixed; width: 100%; margin: 0; }',
-            '.main-availability-table th:nth-child(1) { width: 50%; } /* Site */',
-            '.main-availability-table th:nth-child(2) { width: 25%; } /* Date */',
-            '.main-availability-table th:nth-child(3) { width: 25%; } /* Availability */'
-        ];
-        if (config.display.showCampsiteIdColumn) {
-            // Rebalance widths if the 4th column is present
-            cssRules[1] = '.main-availability-table th:nth-child(1) { width: 30%; } /* Site */';
-            cssRules.push('.main-availability-table th:nth-child(4) { width: 20%; } /* Campsite ID */');
-        }
-        style.textContent = cssRules.join('\n');
-        document.head.appendChild(style);
-    }
-    table.classList.add('main-availability-table');
+    applyTableColumnStyles(table, headers, document, 'main-availability');
 
     rowsToSort.forEach((itemData) => {
         const row = tbody.insertRow();

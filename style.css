@@ -222,7 +222,10 @@ td:nth-child(6) {
 }
 
 .button-container {
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 1em; /* Adds space between the buttons */
+    flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
     margin-top: 20px;
 }
 
@@ -232,7 +235,6 @@ td:nth-child(6) {
     border: none;
     border-radius: 5px;
     cursor: pointer;
-    margin: 0 10px;
     transition: background-color 0.2s ease;
 }
 
@@ -433,8 +435,9 @@ td:nth-child(6) {
 
 @media (max-width: 768px) {
     body {
-        padding: 1em;
+        padding: 1em 0.5em;
         -webkit-text-size-adjust: 100%; /* Prevent font scaling on iOS */
+        font-size: 15px; /* Slightly smaller base font for mobile */
         text-size-adjust: 100%;
     }
 
@@ -466,5 +469,48 @@ td:nth-child(6) {
 
     .button-container button {
         width: 100%;
+    }
+
+    .collapsible-summary {
+        font-size: 0.9em; /* Make text and icons smaller on mobile */
+        padding: 10px 15px; /* Adjust padding for a more compact button */
+    }
+
+    legend {
+        font-size: 1.05em; /* Make legend text slightly smaller */
+    }
+
+    h3,
+    .facility-details h1 {
+        font-size: 1.2em; /* Adjust heading sizes for mobile */
+    }
+
+    form {
+        padding: 10px;
+    }
+
+    fieldset {
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+
+    .facility-details {
+        padding: 10px 10px; /* Less padding on mobile */
+        margin-bottom: 15px; /* Less space below on mobile */
+    }
+
+    .instructions {
+        padding: 10px 12px;
+        margin-bottom: 15px;
+    }
+
+    .tab-panels {
+        padding: 6px; /* Reduce padding on mobile for more content space */
+    }
+
+    th,
+    td {
+        font-size: 0.7em; /* Make table text smaller on mobile */
+        padding: 6px; /* Reduce cell padding for a more compact view */
     }
 }
