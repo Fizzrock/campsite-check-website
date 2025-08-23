@@ -1576,7 +1576,7 @@ function applyTableColumnStyles(tableElement, headers, doc, baseClassName) {
     } else if (hasCampsiteId && !hasActions) { // 4 columns (Site, Date, Avail, ID)
         siteWidth = 20; dateWidth = 20; availabilityWidth = 30; campsiteIdWidth = 30;
     } else if (!hasCampsiteId && hasActions) { // 4 columns (Site, Date, Avail, Actions)
-        siteWidth = 20; dateWidth = 20; availabilityWidth = 30; actionsWidth = 30;
+        siteWidth = 15; dateWidth = 15; availabilityWidth = 25; actionsWidth = 45;
     } else { // 3 columns (Site, Date, Avail)
         siteWidth = 25; dateWidth = 25; availabilityWidth = 50;
     }
@@ -1854,36 +1854,47 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
 
         if (!campsiteId || !tr) return;
 
-        button.textContent = 'Loading...';
-        button.disabled = true;
-
-        let details;
-        if (campsiteDetailsCache.has(campsiteId)) {
-            details = campsiteDetailsCache.get(campsiteId);
+        const existingDetailsRow = tr.nextElementSibling;
+        if (existingDetailsRow && existingDetailsRow.classList.contains('details-row')) {
+            // Details are visible, so hide them
+            existingDetailsRow.remove();
+            button.textContent = 'Show Details';
+            button.classList.remove('active');
         } else {
-            details = await fetchCampsiteDetails(currentRidbFacilityId, campsiteId);
-            if (details) {
-                campsiteDetailsCache.set(campsiteId, details);
+            // Details are hidden, so show them
+            button.textContent = 'Loading...';
+            button.disabled = true;
+
+            let details;
+            if (campsiteDetailsCache.has(campsiteId)) {
+                details = campsiteDetailsCache.get(campsiteId);
+            } else {
+                details = await fetchCampsiteDetails(currentRidbFacilityId, campsiteId);
+                if (details) {
+                    campsiteDetailsCache.set(campsiteId, details);
+                }
             }
-        }
 
-        button.parentElement.innerHTML = 'Details below'; // Replace button with text
+            button.textContent = 'Hide Details';
+            button.classList.add('active');
+            button.disabled = false;
 
-        // Create a new row to hold the details content
-        const detailsRow = tr.parentNode.insertRow(tr.sectionRowIndex + 1);
-        detailsRow.className = 'details-row';
-        const detailsCell = detailsRow.insertCell(0);
-        detailsCell.colSpan = tr.cells.length; // Span across all columns
+            // Create a new row to hold the details content
+            const detailsRow = tr.parentNode.insertRow(tr.sectionRowIndex + 1);
+            detailsRow.className = 'details-row';
+            const detailsCell = detailsRow.insertCell(0);
+            detailsCell.colSpan = tr.cells.length; // Span across all columns
 
-        if (details) {
-            const availableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.AVAILABLE).map(row => row.date);
-            const notReservableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE).map(row => row.date);
-            const openDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.OPEN).map(row => row.date);
-            renderCampsiteDetailsInTab(details, availableDates, notReservableDates, openDates, detailsCell, tr.ownerDocument);
-        } else {
-            detailsCell.textContent = `Could not load details for site ${siteName}.`;
-            detailsCell.style.padding = '10px';
-            detailsCell.style.color = 'red';
+            if (details) {
+                const availableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.AVAILABLE).map(row => row.date);
+                const notReservableDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE).map(row => row.date);
+                const openDates = filteredRowsData.filter(row => row.campsite_id === campsiteId && row.availability === AVAILABILITY_STATUS.OPEN).map(row => row.date);
+                renderCampsiteDetailsInTab(details, availableDates, notReservableDates, openDates, detailsCell, tr.ownerDocument);
+            } else {
+                detailsCell.textContent = `Could not load details for site ${siteName}.`;
+                detailsCell.style.padding = '10px';
+                detailsCell.style.color = 'red';
+            }
         }
     }
 
@@ -2229,7 +2240,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         noDataMessage: "No campsites found matching the specified filters and date range.",
         rowBuilder: rowBuilder,
         postRenderCallback: postRenderCallback,
-        isTableCollapsible: true
+        isTableCollapsible: isFilteringBySiteNumber
     });
 }
 
