@@ -2662,6 +2662,8 @@ function renderCampsiteDetailsInTab(campsiteDetails, availableDates, notReservab
                 imgElement.style.height = 'auto'; // Maintain aspect ratio.
                 imgElement.style.display = 'block';
                 imgElement.style.marginTop = '10px';
+                imgElement.style.cursor = 'pointer';
+                imgElement.addEventListener('click', () => showLightbox(media.URL, doc));
                 detailDiv.appendChild(imgElement);
             });
         }
@@ -3710,22 +3712,29 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
     summaryElement.className = 'availability-summary-main';
     summaryElement.style.fontSize = "1.1rem";
     addInfoElement(document, summaryElement, 'h3', "Availability Summary");
+
     if (Object.keys(availabilityCounts).length > 0) {
+        const summaryList = document.createElement('ul');
+        summaryList.style.listStyleType = 'none';
+        summaryList.style.paddingLeft = '0';
+
         SUMMARY_DISPLAY_ORDER.forEach(type => {
             if (availabilityCounts[type]) {
+                const count = availabilityCounts[type];
+                const listItem = document.createElement('li');
+
                 let displayText = type;
-                if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-                    displayText = 'Walk-up (FCFS)';
-                } else if (type === AVAILABILITY_STATUS.OPEN) {
-                    displayText = 'Extend Only';
-                } else if (type === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
-                    displayText = 'Cutoff (Walk-up)';
-                } else if (type === AVAILABILITY_STATUS.NYR) {
-                    displayText = 'Not Yet Released';
-                }
-                addInfoElement(document, summaryElement, 'p', `${displayText}: ${availabilityCounts[type]}`);
+                if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) displayText = 'Walk-up (FCFS)';
+                else if (type === AVAILABILITY_STATUS.OPEN) displayText = 'Extend Only';
+                else if (type === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) displayText = 'Cutoff (Walk-up)';
+                else if (type === AVAILABILITY_STATUS.NYR) displayText = 'Not Yet Released';
+
+                listItem.textContent = `${displayText}: ${count}`;
+                listItem.className = `summary-item ${getAvailabilityClass(type)}`;
+                summaryList.appendChild(listItem);
             }
         });
+        summaryElement.appendChild(summaryList);
     } else {
         addInfoElement(document, summaryElement, 'p', "No availability data to summarize for the selected period.");
     }
