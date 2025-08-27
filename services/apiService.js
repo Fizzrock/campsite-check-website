@@ -305,7 +305,6 @@ export async function fetchRecGovSearchData(ids, debugInfo) {
 export async function fetchAllData(config, debugInfo) {
     debugInfo.timestamps.fetchStart = new Date().toISOString();
     const { campgroundId } = config.api;
-    const { fetchAndShowEventsOnMainPage, showRecAreaMediaOnMainPage } = config.display;
 
     // These fetches are not configurable in the UI, so we assume they are always wanted for the main page.
     const shouldFetchFacilityDetails = true;
@@ -324,8 +323,8 @@ export async function fetchAllData(config, debugInfo) {
         availability: fetchAvailabilityData(config, debugInfo),
         facilityDetails: shouldFetchFacilityDetails ? fetchFacilityDetails(ids, debugInfo) : Promise.resolve(null),
         recAreaDetails: shouldFetchRecAreaDetails && ids.recAreaId ? fetchRecAreaDetails(ids, debugInfo) : Promise.resolve(null),
-        recAreaEvents: fetchAndShowEventsOnMainPage && ids.recAreaId ? fetchRecAreaEvents(ids, debugInfo) : Promise.resolve(null),
-        recAreaMedia: showRecAreaMediaOnMainPage && ids.recAreaId ? fetchRecAreaMedia(ids, debugInfo) : Promise.resolve(null),
+        recAreaEvents: ids.recAreaId ? fetchRecAreaEvents(ids, debugInfo) : Promise.resolve(null),
+        recAreaMedia: ids.recAreaId ? fetchRecAreaMedia(ids, debugInfo) : Promise.resolve(null),
         recGovSearchData: shouldFetchRecGovSearchData ? fetchRecGovSearchData(ids, debugInfo) : Promise.resolve(null),
     };
 
@@ -363,7 +362,7 @@ export async function fetchAllData(config, debugInfo) {
 
 
     // Second-chance logic for RecArea ID if initial attempt failed
-    if (fetchAndShowEventsOnMainPage && !ids.recAreaId && facilityDetails) {
+    if (!ids.recAreaId && facilityDetails) {
         const fallbackRecAreaId = facilityDetails.ParentRecAreaID || (facilityDetails.RECAREA && facilityDetails.RECAREA[0]?.RecAreaID);
         if (fallbackRecAreaId) {
             console.log(`[fetchAllData] Metadata did not provide RecAreaID. Found fallback in facilityDetails: ${fallbackRecAreaId}.`);

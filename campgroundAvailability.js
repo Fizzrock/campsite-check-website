@@ -265,13 +265,9 @@ const config = {
     ////////////////////////////////////////
     display: {
         // Main Page Features
-        showMainDataTable: true, // If true, shows a table of all campsite availabilities for the fetched period.
-        fetchAndShowEventsOnMainPage: true, // If true, fetches and displays RecArea events on the main page.
-        showRecAreaMediaOnMainPage: true, // If true, fetches and displays RecArea media on the main page.
 
         // New Tab Toggles
         showRawJsonTab: true, // If true, opens a new tab with the full raw JSON response from the availability API.
-        showFilteredSitesTab: true, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
         showFullMetadataTab: true, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
         showCampsitesObjectTab: true, // For debugging, not yet implemented
         showRecGovSearchDataTab: true, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
@@ -1036,10 +1032,7 @@ async function renderAllOutputs(allData, config) {
 
     // --- Primary Tabs (Filtered and Available) ---
     // Render these first so "Filtered Sites" can be the default active tab.
-    console.log('[renderAllOutputs] Checking if showFilteredSitesTab is enabled:', config.display.showFilteredSitesTab);
-    if (config.display.showFilteredSitesTab) {
-        await displayFilteredSitesInNewTab(campsites, availabilityCounts, config, ids.facilityId, requestDateTime, response, campgroundMetadata);
-    }
+    await displayFilteredSitesInNewTab(campsites, availabilityCounts, config, ids.facilityId, requestDateTime, response, campgroundMetadata);
 
     // --- Campground Details Tab (formerly "Main") ---
     // This is now a secondary tab, rendered after the primary ones.
@@ -2539,17 +2532,15 @@ function processAvailabilityData(data, config) {
     const campsites = data.campsites;
     console.log("[processAvailabilityData] Extracted campsites:", campsites ? `${Object.keys(campsites).length} sites` : "null/undefined");
     const availabilityCounts = {};
-
-    // Calculate counts if main table or summary tab is enabled
-    if (config.display.showMainDataTable || config.display.showAvailabilitySummaryTab) {
-        if (campsites && Object.keys(campsites).length > 0) {
-            for (const campsiteId_calc in campsites) {
-                const campsite_calc = campsites[campsiteId_calc];
-                for (const date_calc in campsite_calc.availabilities) {
-                    if (isDateInRange(date_calc, config.filters.filterStartDate, config.filters.filterEndDate)) { // Apply date range filter
-                        const availability_calc = campsite_calc.availabilities[date_calc];
-                        availabilityCounts[availability_calc] = (availabilityCounts[availability_calc] || 0) + 1;
-                    }
+    
+    // Always calculate counts as they are now used in the primary "Filtered Sites" tab.
+    if (campsites && Object.keys(campsites).length > 0) {
+        for (const campsiteId_calc in campsites) {
+            const campsite_calc = campsites[campsiteId_calc];
+            for (const date_calc in campsite_calc.availabilities) {
+                if (isDateInRange(date_calc, config.filters.filterStartDate, config.filters.filterEndDate)) { // Apply date range filter
+                    const availability_calc = campsite_calc.availabilities[date_calc];
+                    availabilityCounts[availability_calc] = (availabilityCounts[availability_calc] || 0) + 1;
                 }
             }
         }
@@ -3161,11 +3152,6 @@ function renderOtherMetadata(parentElement, metadata) {
  * @param {object} config The script's configuration object.
  */
 function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, response, config) {
-    if (!config.display.showMainDataTable) {
-        addInfoElement(document, parentElement, 'p', "Main data table display is disabled by configuration.", "warning-message");
-        return;
-    }
-
     const availabilityHeader = addInfoElement(document, parentElement, 'h3', "Monthly Availability Details");
     if (availabilityHeader) availabilityHeader.style.marginTop = "20px";
 
@@ -3335,15 +3321,13 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
             renderMediaGallery(detailsContainer, facilityDetails.MEDIA, 'Facility Media');
             debugInfo.rendering.mainPageRenderStatus.mediaGalleries++;
         }
-        if (config.display.showRecAreaMediaOnMainPage && recAreaMedia && recAreaMedia.length > 0) {
+        if (recAreaMedia && recAreaMedia.length > 0) {
             renderMediaGallery(detailsContainer, recAreaMedia, 'Recreation Area Gallery');
             debugInfo.rendering.mainPageRenderStatus.mediaGalleries++;
         }
 
         // Render the events section directly into the main container, after the details block.
-        if (config.display.fetchAndShowEventsOnMainPage) {
-            renderEventsSection(containerElement, eventsData, ids);
-        }
+        renderEventsSection(containerElement, eventsData, ids);
     } else {
         // Fallback if facilityDetails are not available, still provide a link and key IDs.
         const fallbackDiv = document.createElement('div');
