@@ -1,7 +1,7 @@
 /**
  * =================================================================================================
  * RECREATION.GOV CAMPSITE AVAILABILITY CHECKER
- * Version: 2.4.0
+ * Version: 2.5.0
  * =================================================================================================
  *
  * Description:
@@ -14,19 +14,21 @@
  * The project is structured as a modern web application with a clear separation of concerns:
  * - `index.html`: Contains the HTML structure for the user interface form.
  * - `style.css`: Provides styling for the application.
- * - `campgroundAvailability.js`: The main frontend script containing all client-side logic.
+ * - `campgroundAvailability.js`: The main frontend script containing UI management and rendering logic.
  *   - UI Initialization (`initializePage`): Sets up the form, populates presets, and attaches event listeners.
  *   - Dynamic Configuration (`buildConfigFromForm`): Builds the search configuration from the UI on demand.
  *   - Core Logic (`runAvailabilityCheck`): The main entry point that orchestrates the data fetching and rendering.
+ * - `services/apiService.js`: A dedicated service module that encapsulates all external API fetching logic, error handling, and data shaping.
  * - `api/fetch-ridb.js`: A Vercel serverless function that acts as a secure proxy for all external API calls.
  * - `middleware.js`: Vercel Edge Middleware that provides password protection for the entire site.
  * - `presets.json`: An external file for managing campground presets, loaded dynamically by the application.
  *
  * Key Features:
+ * - Architectural Refactoring: The application has been refactored to use a dedicated API service module, improving separation of concerns, maintainability, and testability.
  * - Interactive UI: Dynamically configure searches using a web form instead of editing code.
  * - External Presets: Manage favorite campgrounds and site lists in an easy-to-edit `presets.json` file.
  * - Shareable Searches: Generate and copy bookmarkable URLs that contain your exact search configuration, including all UI options.
- * - Secure API Handling: All API calls are routed through a server-side proxy, keeping your API key safe.
+ * - Modular & Secure API Handling: All external API calls are encapsulated in a dedicated service module and routed through a server-side proxy, keeping the API key safe and the main application logic clean.
  * - Mobile-First Responsive Design: The user interface, including the configuration form and title, now adapts for a better viewing experience on mobile devices.
  * - Intelligent API Management: Implemented "lazy loading" for site details to prevent API rate-limiting and improve performance. Details are fetched on-demand or capped at a reasonable limit.
  * - Search Constraints: Enforces a maximum 40-day search window and a 30-site filter limit to ensure efficient and predictable queries.
@@ -838,7 +840,6 @@ function prepareConfig(config) {
 
     return config;
 }
-
 
 /**
  * Formats a Date object into a "MM-DD-YYYY" string based on its UTC components.
@@ -3711,6 +3712,13 @@ async function handleFormSubmit(event) {
 
         const dynamicConfig = buildConfigFromForm();
         await runAvailabilityCheck(dynamicConfig);
+
+        // --- Automatically collapse the accordion AFTER results are shown ---
+        const accordionHeader = document.querySelector('.accordion-header');
+        if (accordionHeader && accordionHeader.classList.contains('active')) {
+            accordionHeader.click();
+        }
+
     } finally {
         // Instead of re-enabling immediately, start the cooldown.
         startCooldown(submitButton);
@@ -3969,6 +3977,30 @@ async function initializePage() {
 
     // 2. Populate the form with the determined initial configuration
     populateFormFromConfig(initialConfig);
+
+    // --- Accordion Logic ---
+    const accordionHeader = document.querySelector('.accordion-header');
+    if (accordionHeader) {
+        const contentPanel = accordionHeader.nextElementSibling;
+
+        accordionHeader.addEventListener('click', function() {
+            this.classList.toggle('active');
+            if (contentPanel.style.maxHeight) {
+                // If it has a maxHeight, it's open, so close it
+                contentPanel.style.maxHeight = null;
+            } else {
+                // If it's closed, open it to its full content height
+                contentPanel.style.maxHeight = contentPanel.scrollHeight + "px";
+            }
+        });
+
+        // --- Make the accordion open by default on page load ---
+        // We do this after a tiny delay to allow the browser to render everything,
+        // ensuring scrollHeight is calculated correctly.
+        setTimeout(() => {
+            accordionHeader.click(); // Programmatically click to open it
+        }, 100);
+    }
 
     // 3. Attach event listeners (handlers will be implemented in the next step)
     form.addEventListener('submit', handleFormSubmit);

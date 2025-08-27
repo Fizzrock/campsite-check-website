@@ -48,6 +48,58 @@ form {
     margin-bottom: 20px;
 }
 
+/* --- Accordion Styles for Configuration Section --- */
+#config-accordion-container {
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden; /* Ensures children with border-radius look correct */
+}
+
+.accordion-header {
+    background-color: #e7f3ff; /* A light, friendly blue */
+    color: #333;
+    cursor: pointer;
+    padding: 15px 20px;
+    margin: 0;
+    font-size: 1.2em;
+    border: none;
+    text-align: left;
+    outline: none;
+    transition: background-color 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.accordion-header:hover {
+    background-color: #d0e8ff; /* A slightly darker blue for hover */
+}
+
+.accordion-header .toggle-icon {
+    font-size: 1em;
+    transition: transform 0.3s ease;
+}
+
+.accordion-header.active .toggle-icon {
+    transform: rotate(180deg);
+}
+
+.accordion-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    background-color: #fff;
+}
+
+/* Remove margin and border from the form when it's inside the accordion */
+.accordion-content form {
+    margin: 0;
+    border: none;
+    border-top: 1px solid #ccc; /* Add a separator line */
+    border-radius: 0;
+}
+
 fieldset {
     border: 1px solid #ccc;
     border-radius: 4px;
