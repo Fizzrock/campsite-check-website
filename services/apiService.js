@@ -74,11 +74,14 @@ export async function fetchApiData(url, options, context, dataProcessor, debugIn
  * This class simplifies passing around the various IDs (campground, facility, rec area, etc.).
  */
 export class IdCollection {
-    constructor(campgroundData) {
-        this.campgroundId = campgroundData.campground_id;
-        this.facilityId = campgroundData.facility_id;
-        this.recAreaId = campgroundData.parent_rec_area_id;
-        this.campsiteId = campgroundData.campsite_id; // May be undefined
+    constructor(initialCampgroundId, apiCampgroundData = {}) {
+        // The initial campgroundId from the config is the most reliable one.
+        this.campgroundId = initialCampgroundId;
+
+        // Populate other IDs from the metadata API response.
+        this.facilityId = apiCampgroundData.facility_id;
+        this.recAreaId = apiCampgroundData.parent_rec_area_id;
+        this.campsiteId = apiCampgroundData.campsite_id; // May be undefined
         this.eventInfoStatus = 'NOT_FETCHED';
     }
 }
@@ -190,7 +193,7 @@ export async function fetchCampgroundMetadata(campgroundId, debugInfo) {
             console.error("Campground metadata fetch failed: 'campground' key not in response.", json);
             return null;
         }
-        const ids = new IdCollection(json.campground);
+        const ids = new IdCollection(campgroundId, json.campground);
         return { ids, campgroundMetadata: json.campground };
     };
 
@@ -281,7 +284,12 @@ export async function fetchRecGovSearchData(ids, debugInfo) {
     const url = `/api/fetch-ridb?type=rec-gov-search&campgroundId=${ids.campgroundId}`;
     const options = { headers: { 'Accept': 'application/json' } };
     const context = { type: 'Rec.gov Search Data', campgroundId: ids.campgroundId };
-    return fetchApiData(url, options, context, json => json, debugInfo);
+    const dataProcessor = (json) => {
+        console.log('[fetchRecGovSearchData] Raw JSON response from search API:', json);
+        // The UI expects the full object with the 'results' array, so we return it directly.
+        return json;
+    };
+    return fetchApiData(url, options, context, dataProcessor, debugInfo);
 }
 
 // --- Data Fetching Orchestration ---
@@ -374,16 +382,20 @@ export async function fetchAllData(config, debugInfo) {
     }
 
     // --- Step 5: Assemble the final data object in the format the application expects ---
-    return {
+    const finalDataObject = {
         campgroundMetadata,
         facilityDetails,
         recAreaDetails,
         eventsData: eventsData ? eventsData.RECDATA : null,
         recAreaMedia: recAreaMedia ? recAreaMedia.RECDATA : null,
-        recGovSearchData,
+        recGovSearchData, // The raw search data object. The UI will extract the first result.
         combinedCampsites: availabilityData ? availabilityData.campsites : {},
         response: availabilityData ? availabilityData.response : { headers: new Headers() },
         requestDateTime: availabilityData ? availabilityData.requestDateTime : new Date(),
         ids
     };
+
+    console.log('%c[fetchAllData] Final data object being returned to UI:', 'color: green; font-weight: bold;', finalDataObject);
+
+    return finalDataObject;
 }
