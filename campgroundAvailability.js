@@ -271,7 +271,6 @@ const config = {
 
         // New Tab Toggles
         showRawJsonTab: true, // If true, opens a new tab with the full raw JSON response from the availability API.
-        showAvailableOnlyTab: true, // If true, opens a new tab with only "Available" sites.
         showFilteredSitesTab: true, // If true, opens a new tab with sites filtered by `siteFilters.siteNumbersToFilter`.
         showFullMetadataTab: true, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
         showCampsitesObjectTab: true, // For debugging, not yet implemented
@@ -486,6 +485,11 @@ function createInPageTab(title) {
 
     buttonContainer.appendChild(button);
     panelContainer.appendChild(panel);
+
+    // If this is the very first tab being added, activate it by default.
+    if (buttonContainer.children.length === 1) {
+        showTab(panelId);
+    }
 
     return panel;
 }
@@ -1028,28 +1032,24 @@ async function renderAllOutputs(allData, config) {
 
     const { campsites, availabilityCounts } = processAvailabilityData(finalAvailabilityData || { campsites: {} }, config);
 
-    // Create the "Main" tab and render the primary content into it.
-    const mainTabPanel = createInPageTab('Main');
-    if (mainTabPanel) {
-        renderMainPage(mainTabPanel, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recGovSearchData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
-        showTab(mainTabPanel.id); // Activate the first tab by default
-    }
-
     console.log("[renderAllOutputs] Proceeding to open new tabs based on configuration.");
 
-    // Then render the additional tabs in a specific order
-
-    // Filtered and Available sites tabs first
+    // --- Primary Tabs (Filtered and Available) ---
+    // Render these first so "Filtered Sites" can be the default active tab.
     console.log('[renderAllOutputs] Checking if showFilteredSitesTab is enabled:', config.display.showFilteredSitesTab);
     if (config.display.showFilteredSitesTab) {
-        await displayFilteredSitesInNewTab(campsites, config, ids.facilityId, requestDateTime, response, campgroundMetadata);
-    }
-    console.log('[renderAllOutputs] Checking if showAvailableOnlyTab is enabled:', config.display.showAvailableOnlyTab);
-    if (config.display.showAvailableOnlyTab) {
-        await displayAvailableSitesInNewTab(campsites, availabilityCounts, config, requestDateTime, response, campgroundMetadata);
+        await displayFilteredSitesInNewTab(campsites, availabilityCounts, config, ids.facilityId, requestDateTime, response, campgroundMetadata);
     }
 
-    // Raw data tabs
+    // --- Campground Details Tab (formerly "Main") ---
+    // This is now a secondary tab, rendered after the primary ones.
+    const detailsTabPanel = createInPageTab('Campground Details');
+    if (detailsTabPanel) {
+        renderMainPage(detailsTabPanel, campgroundMetadata, facilityDetails, recAreaDetails, eventsData, recGovSearchData, recAreaMedia, campsites, availabilityCounts, requestDateTime, response, config, ids);
+    }
+
+
+    // --- Raw Data & Debugging Tabs ---
     console.log('[renderAllOutputs] Checking if showRawJsonTab is enabled:', config.display.showRawJsonTab);
     if (config.display.showRawJsonTab) {
         const jsonData = (finalAvailabilityData.campsites && Object.keys(finalAvailabilityData.campsites).length > 0) ? finalAvailabilityData : { message: "No combined availability data to show." };
@@ -1114,6 +1114,7 @@ async function renderAllOutputs(allData, config) {
  * @param {TabularDataOptions} options Configuration for the new tab.
  */
 async function renderTabularDataInNewTab(options) {
+    console.log('%c[renderTabularDataInNewTab] Received options:', 'color: blue; font-weight: bold;', options);
     const {
         tabTitle,
         pageTitle,
@@ -1128,15 +1129,19 @@ async function renderTabularDataInNewTab(options) {
         rowBuilder,
         preTableRenderCallback,
         postRenderCallback,
-        isTableCollapsible = false
+        isTableCollapsible = false,
+        _parentElement = null
     } = options;
 
-    const panel = createInPageTab(tabTitle);
+    // If a parent element is passed directly, use it. Otherwise, create a new tab.
+    const panel = _parentElement || createInPageTab(tabTitle);
     if (!panel) return;
 
     // Lightbox is already initialized on the main document.
 
-    addInfoElement(document, panel, 'h1', pageTitle);
+    if (pageTitle) { // Only add H1 if a title is provided
+        addInfoElement(document, panel, 'h1', pageTitle);
+    }
 
     // Display Date Range and other common headers
     const dateRangeText = getDateRangeDisplayText(config.filters.filterStartDate, config.filters.filterEndDate, config.filters.startDate);
@@ -1323,6 +1328,100 @@ function processAndSortAvailability(allCampsitesData, config, rowFilterPredicate
     return rowsData;
 }
 
+/**
+ * Renders the color-coded summary of all availability counts for the campground.
+ * @param {Document} doc The document object.
+ * @param {HTMLElement} containerDiv The parent element to append the summary to.
+ * @param {object} availabilityCounts The object containing availability counts.
+ */
+function renderOverallAvailabilitySummary(doc, containerDiv, availabilityCounts) {
+    const summaryDiv = doc.createElement('div');
+    summaryDiv.className = 'availability-summary-main';
+    addInfoElement(doc, summaryDiv, 'h3', 'Overall Availability Counts');
+
+    if (availabilityCounts && Object.keys(availabilityCounts).length > 0) {
+        const summaryList = doc.createElement('ul');
+        summaryList.style.listStyleType = 'none';
+        summaryList.style.paddingLeft = '0';
+
+        SUMMARY_DISPLAY_ORDER.forEach(type => {
+            if (availabilityCounts[type]) {
+                const count = availabilityCounts[type];
+                const listItem = doc.createElement('li');
+
+                let displayText = type;
+                if (type === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+                    displayText = 'Walk-up (FCFS)';
+                } else if (type === AVAILABILITY_STATUS.OPEN) {
+                    displayText = 'Extend Only';
+                } else if (type === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
+                    displayText = 'Cutoff (Walk-up)';
+                } else if (type === AVAILABILITY_STATUS.NYR) {
+                    displayText = 'Not Yet Released';
+                }
+
+                listItem.textContent = `${displayText}: ${count}`;
+                listItem.className = `summary-item ${getAvailabilityClass(type)}`;
+                summaryList.appendChild(listItem);
+            }
+        });
+        summaryDiv.appendChild(summaryList);
+    } else {
+        addInfoElement(doc, summaryDiv, 'p', "No availability data to summarize for the selected period.");
+    }
+    containerDiv.appendChild(summaryDiv);
+}
+
+/**
+ * Renders a collapsible table of all available sites.
+ * @param {HTMLElement} containerDiv The parent element to append the table to.
+ * @param {object} allCampsitesData The complete campsites data object.
+ * @param {object} config The main configuration object.
+ * @param {Date} requestDateTime The timestamp of the data request.
+ * @param {Response} response The fetch response object.
+ * @param {object|null} campgroundMetadata The metadata for the campground.
+ */
+async function renderAllAvailableSitesSection(containerDiv, allCampsitesData, config, requestDateTime, response, campgroundMetadata) {
+    const includeNotReservable = config.tabBehavior.includeNotReservableInAvailableTab;
+
+    const rowFilter = (_campsite, availability) => {
+        return availability === AVAILABILITY_STATUS.AVAILABLE || (includeNotReservable && availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
+    };
+    const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
+
+    const rowBuilder = (doc, rowData) => {
+        const tr = doc.createElement('tr');
+        tr.insertCell().textContent = rowData.site;
+        tr.insertCell().textContent = rowData.date;
+        const availabilityCell = tr.insertCell();
+        availabilityCell.textContent = rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE ? 'Walk-up' : rowData.availability;
+        availabilityCell.className = getAvailabilityClass(rowData.availability);
+        if (config.display.showCampsiteIdColumn) {
+            tr.insertCell().textContent = rowData.campsite_id;
+        }
+        return tr;
+    };
+
+    const pageTitle = `All Available Campsites${includeNotReservable ? ' & Walk-Up (FCFS)' : ''}`;
+    const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
+
+    const tableContainer = document.createElement('div');
+    containerDiv.appendChild(tableContainer);
+
+    addInfoElement(document, tableContainer, 'h2', pageTitle);
+
+    const tableOptions = {
+        tabTitle: 'AllAvailableSites', // A non-rendered title used for generating CSS classes.
+        dataRows: availableRowsData,
+        headers: ["Site", "Date", "Availability"].concat(config.display.showCampsiteIdColumn ? ["Campsite ID"] : []),
+        config, allCampsitesData, requestDateTime, response, sortDescription, rowBuilder,
+        noDataMessage: "No 'Available' or 'Walk-Up (FCFS)' campsites found for the selected period.",
+        isTableCollapsible: true,
+        _parentElement: tableContainer // This tells the function to render here, not in a new tab.
+    };
+    console.log('%c[renderAllAvailableSitesSection] Calling renderTabularDataInNewTab with options:', 'color: blue; font-weight: bold;', tableOptions);
+    await renderTabularDataInNewTab(tableOptions);
+}
 
 /**
  * Renders a new tab showing only campsites that are "Available" (and optionally "Not Reservable").
@@ -1516,7 +1615,7 @@ function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, lo
  * @param {Date} requestDateTime The timestamp of the data request.
  * @param {Response} response The fetch response object.
  */
-async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRidbFacilityId, requestDateTime, response, campgroundMetadata) {
+async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts, config, currentRidbFacilityId, requestDateTime, response, campgroundMetadata) {
     console.log('[displayFilteredSitesInNewTab] Using facility ID for details:', currentRidbFacilityId);
     const campsiteDetailsCache = new Map();
 
@@ -1769,6 +1868,19 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
             });
             logDebug(`Attached 'Show Details' listeners to ${detailButtons.length} buttons.`);
         }
+
+        // --- Add the overall availability summary at the bottom ---
+        const separator = doc.createElement('hr');
+        separator.style.marginTop = '40px';
+        separator.style.marginBottom = '20px';
+        separator.style.border = '1px solid #ccc';
+        containerDiv.appendChild(separator);
+
+        addInfoElement(doc, containerDiv, 'h2', 'Overall Campground Availability');
+
+        // Render the summary box and the full available sites table
+        renderOverallAvailabilitySummary(doc, containerDiv, availabilityCounts);
+        await renderAllAvailableSitesSection(containerDiv, allCampsitesData, config, requestDateTime, response, campgroundMetadata);
     };
 
     // 4. Configure and call the generic renderer.
