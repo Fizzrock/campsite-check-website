@@ -145,6 +145,8 @@
  * =================================================================================================
  */
 
+import { fetchAllData as fetchAllDataFromService, fetchCampsiteDetails as fetchCampsiteDetailsFromService } from './services/apiService.js';
+
 // --- Configuration Presets ---
 /*
  * NOTE ON PRESET LOGIC:
@@ -1781,6 +1783,7 @@ function normalizeSiteName(name) {
  * @returns {Array<string>} A sorted array of campsite IDs to fetch details for.
  */
 function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug = () => {}) {
+    console.log('[getSiteIdsForDetailFetch] Config flags: fetchDetailsForAllFilteredSites=', config.tabBehavior.fetchDetailsForAllFilteredSites, 'fetchDetailsForAvailableFilteredSites=', config.tabBehavior.fetchDetailsForAvailableFilteredSites);
     const idsForDetailFetch = [];
 
     if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
@@ -1788,6 +1791,7 @@ function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, lo
         const siteNumbersToFilterArray = config.siteFilters.siteNumbersToFilter;
         if (siteNumbersToFilterArray.length > 0 && allCampsitesData) {
             const siteNameToIdMap = new Map(Object.values(allCampsitesData).map(c => [normalizeSiteName(c.site), c.campsite_id]));
+            console.log('[getSiteIdsForDetailFetch] Built siteNameToIdMap:', siteNameToIdMap);
             siteNumbersToFilterArray.forEach(siteName => {
                 const campsiteId = siteNameToIdMap.get(normalizeSiteName(siteName));
                 if (campsiteId) idsForDetailFetch.push(campsiteId);
@@ -1843,6 +1847,7 @@ function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, lo
  * @param {Response} response The fetch response object.
  */
 async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRidbFacilityId, requestDateTime, response, campgroundMetadata) {
+    console.log('[displayFilteredSitesInNewTab] Using facility ID for details:', currentRidbFacilityId);
     const campsiteDetailsCache = new Map();
 
     // This handler is defined here to have access to the function's scope (cache, config, etc.)
@@ -1869,7 +1874,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
             if (campsiteDetailsCache.has(campsiteId)) {
                 details = campsiteDetailsCache.get(campsiteId);
             } else {
-                details = await fetchCampsiteDetails(currentRidbFacilityId, campsiteId);
+                details = await fetchCampsiteDetailsFromService(currentRidbFacilityId, campsiteId, debugInfo);
                 if (details) {
                     campsiteDetailsCache.set(campsiteId, details);
                 }
@@ -1991,8 +1996,10 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
         // --- END: In-Tab Debugging ---
 
         if (isFilteringBySiteNumber) {
+            console.log('[postRenderCallback] isFilteringBySiteNumber:', isFilteringBySiteNumber);
             logDebug(`Site filter is active. Fetching details automatically.`);
             let idsForDetailFetch = getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug);
+            console.log('[postRenderCallback] Site IDs identified for detail fetching:', idsForDetailFetch);
             const originalDetailFetchCount = idsForDetailFetch.length;
             const MAX_DETAILS_TO_FETCH = 50;
             let isCapped = false;
@@ -2025,8 +2032,9 @@ async function displayFilteredSitesInNewTab(allCampsitesData, config, currentRid
             debugInfo.processing.filteredSiteIdsForDetailFetch = idsForDetailFetch;
 
             const loadingDetailsP = addInfoElement(doc, containerDiv, 'p', "Loading detailed information for each campsite...");
-            const detailPromises = idsForDetailFetch.map(cId => fetchCampsiteDetails(currentRidbFacilityId, cId));
+            const detailPromises = idsForDetailFetch.map(cId => fetchCampsiteDetailsFromService(currentRidbFacilityId, cId, debugInfo));
             const allDetailsResults = await Promise.allSettled(detailPromises);
+            console.log('[postRenderCallback] Raw results from all detail fetches:', allDetailsResults);
             if (loadingDetailsP) containerDiv.removeChild(loadingDetailsP);
 
             allDetailsResults.forEach(result => {
@@ -2876,50 +2884,6 @@ function startCooldown(button) {
     }, 1000);
 }
 
-// --- Robust Date Parsing Function ---
-/**
- * Parses a date string from an aria-label with the expected format "DayOfWeek, Month Day, Year".
- * Example: "Thursday, July 10, 2025"
- *
- * @param {string} ariaLabel The aria-label string containing the date.
- * @returns {Date|null} A Date object if parsing is successful, otherwise null.
- */
-function parseDateFromAriaLabelRobust(ariaLabel) {
-  if (typeof ariaLabel !== 'string' || ariaLabel.trim() === '') {
-    console.error("Invalid ariaLabel input: must be a non-empty string.");
-    return null;
-  }
-
-  // The format is "DayOfWeek, Month Day, Year"
-  // We are primarily interested in "Month Day, Year" for reliable parsing by new Date().
-  // Example: "Thursday, July 10, 2025" -> we want "July 10, 2025"
-
-  // Find the first comma, then take the substring after it.
-  const commaIndex = ariaLabel.indexOf(',');
-  if (commaIndex === -1) {
-    console.error(`Invalid date format in ariaLabel: "${ariaLabel}". Expected "DayOfWeek, Month Day, Year".`);
-    return null;
-  }
-
-  // Extract the "Month Day, Year" part
-  const dateStringPart = ariaLabel.substring(commaIndex + 1).trim(); // e.g., "July 10, 2025"
-
-  if (dateStringPart === '') {
-    console.error(`Empty date part after comma in ariaLabel: "${ariaLabel}".`);
-    return null;
-  }
-
-  // Attempt to parse the date string.
-  const date = new Date(dateStringPart);
-
-  // Check if the date is valid.
-  if (isNaN(date.getTime())) {
-    console.error(`Failed to parse date from string: "${dateStringPart}" (derived from "${ariaLabel}")`);
-    return null;
-  }
-  return date;
-}
-
 // --- Main Page Rendering Sub-components ---
 
 /**
@@ -2929,11 +2893,10 @@ function parseDateFromAriaLabelRobust(ariaLabel) {
  * @param {object|null} recAreaDetails The detailed data for the parent recreation area.
  * @param {IdCollection} ids The collection of IDs for the campground.
  */
-function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaDetails, recGovSearchData, ids) {
+function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaDetails, searchResult, ids) {
     addInfoElement(document, parentElement, 'h1', facilityDetails.FacilityName || `Details for Campground ID: ${ids.campgroundId}`);
 
-    if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
-        const searchResult = recGovSearchData.results[0];
+    if (searchResult) {
         renderUserRatings(parentElement, searchResult);
         renderAtAGlanceInfo(parentElement, searchResult);
     }
@@ -2959,12 +2922,9 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
     }
     addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
 
-    if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
-        const searchResult = recGovSearchData.results[0];
-        if (searchResult.org_name && searchResult.org_id) {
-            const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
-            addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
-        }
+    if (searchResult?.org_name && searchResult?.org_id) {
+        const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
+        addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
     }
     parentElement.appendChild(idsDiv);
 
@@ -3418,7 +3378,7 @@ function renderOtherMetadata(parentElement, metadata) {
  * @param {Response} response The raw fetch response object for cache info.
  * @param {object} config The script's configuration object.
  */
-function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, response, config) { // eslint-disable-line no-unused-vars
+function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, response, config) {
     if (!config.display.showMainDataTable) {
         addInfoElement(document, parentElement, 'p', "Main data table display is disabled by configuration.", "warning-message");
         return;
@@ -3537,28 +3497,31 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         return;
     }
 
-    // Clear previous content from the main container
     containerElement.innerHTML = '';
+
+    const searchResult = recGovSearchData?.results?.[0] || null;
+    const mainPageRenderStatus = debugInfo.rendering.mainPageRenderStatus;
+
+    // Centralized badge creation (always create the badge element)
+    const badgePlaceholder = document.createElement('div');
+    badgePlaceholder.style.textAlign = 'left';
+    badgePlaceholder.style.marginBottom = '10px';
+    const badge = document.createElement('span');
+    badge.id = 'api-status-badge';
+    badge.style.display = 'none'; // Initially hidden
+    badgePlaceholder.appendChild(badge);
+
     debugInfo.rendering.mainPageRenderStatus.facilityDetails = !!facilityDetails;
     debugInfo.rendering.mainPageRenderStatus.recAreaDetails = !!recAreaDetails;
     debugInfo.rendering.mainPageRenderStatus.events = ids.eventInfoStatus;
     debugInfo.rendering.mainPageRenderStatus.mediaGalleries = 0;
 
     // --- New debug info for rec.gov search data ---
-    const hasRecGovSearchData = recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0;
-    debugInfo.rendering.mainPageRenderStatus.recGovSearchData = hasRecGovSearchData ? 'DATA_FOUND' : 'DATA_MISSING';
-    if (hasRecGovSearchData) {
-        const searchResult = recGovSearchData.results[0];
-        debugInfo.rendering.mainPageRenderStatus.userRatings = (typeof searchResult.average_rating === 'number') ? 'DATA_FOUND' : 'DATA_MISSING';
-        debugInfo.rendering.mainPageRenderStatus.atAGlanceInfo = (searchResult.campsites_count || typeof searchResult.aggregate_cell_coverage === 'number' || searchResult.price_range) ? 'DATA_FOUND' : 'DATA_MISSING';
-        debugInfo.rendering.mainPageRenderStatus.primaryImage = searchResult.preview_image_url ? 'DATA_FOUND' : 'DATA_MISSING';
-        debugInfo.rendering.mainPageRenderStatus.organizationInfo = (searchResult.org_name && searchResult.org_id) ? 'DATA_FOUND' : 'DATA_MISSING';
-    } else {
-        debugInfo.rendering.mainPageRenderStatus.userRatings = 'PARENT_DATA_MISSING';
-        debugInfo.rendering.mainPageRenderStatus.atAGlanceInfo = 'PARENT_DATA_MISSING';
-        debugInfo.rendering.mainPageRenderStatus.primaryImage = 'PARENT_DATA_MISSING';
-        debugInfo.rendering.mainPageRenderStatus.organizationInfo = 'PARENT_DATA_MISSING';
-    }
+    mainPageRenderStatus.recGovSearchData = searchResult ? 'DATA_FOUND' : 'DATA_MISSING';
+    mainPageRenderStatus.userRatings = searchResult && typeof searchResult.average_rating === 'number' ? 'DATA_FOUND' : 'DATA_MISSING';
+    mainPageRenderStatus.atAGlanceInfo = searchResult && (searchResult.campsites_count || typeof searchResult.aggregate_cell_coverage === 'number' || searchResult.price_range) ? 'DATA_FOUND' : 'DATA_MISSING';
+    mainPageRenderStatus.primaryImage = searchResult?.preview_image_url ? 'DATA_FOUND' : 'DATA_MISSING';
+    mainPageRenderStatus.organizationInfo = searchResult?.org_name && searchResult?.org_id ? 'DATA_FOUND' : 'DATA_MISSING';
 
     // --- Section 1: Render Header, Details, and Galleries ---
     if (facilityDetails) {
@@ -3567,27 +3530,22 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         detailsContainer.style.fontSize = "1.1rem";
         containerElement.appendChild(detailsContainer);
 
+        // Insert the API status badge placeholder after the main H1 title
+        // The H1 is created by renderFacilityHeaderAndDetails
         // Render the main header, facility details, and rec area details into their container.
-        renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, recGovSearchData, ids);
-
-        // Create and insert the API status badge placeholder. It will be populated by renderApiStatusBadge.
-        const badgePlaceholder = document.createElement('div');
-        badgePlaceholder.style.textAlign = 'left';
-        badgePlaceholder.style.marginBottom = '10px';
-        const badge = document.createElement('span');
-        badge.id = 'api-status-badge';
-        badge.style.display = 'none'; // Initially hidden
-        badgePlaceholder.appendChild(badge);
+        renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, searchResult, ids);
+        const h1 = detailsContainer.querySelector('h1');
+        if (h1) h1.parentNode.insertBefore(badgePlaceholder, h1.nextSibling);
 
         const ratingsSection = detailsContainer.querySelector('.ratings-section');
         if (ratingsSection) {
-            // Insert the badge container right before the ratings section.
-            ratingsSection.parentNode.insertBefore(badgePlaceholder, ratingsSection);
+            // The badge is now inserted after the H1, so this specific insertion logic is no longer needed.
+            // The ratings section will appear after the badge.
         }
 
         // Render primary image from search data, if available
-        if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
-            renderPrimaryImage(detailsContainer, recGovSearchData.results[0]);
+        if (searchResult) {
+            renderPrimaryImage(detailsContainer, searchResult);
         }
 
         // Render media galleries into the same container.
@@ -3610,6 +3568,10 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         fallbackDiv.className = 'facility-details';
         addInfoElement(document, fallbackDiv, 'h1', `Details for Campground ID: ${ids.campgroundId}`);
 
+        // Insert the API status badge placeholder after the main H1 title in fallback
+        const h1 = fallbackDiv.querySelector('h1');
+        if (h1) h1.parentNode.insertBefore(badgePlaceholder, h1.nextSibling);
+
         const idsDiv = document.createElement('div');
         idsDiv.className = 'id-display-section';
         idsDiv.style.padding = '10px';
@@ -3630,12 +3592,9 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         }
         addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
 
-        if (recGovSearchData && recGovSearchData.results && recGovSearchData.results.length > 0) {
-            const searchResult = recGovSearchData.results[0];
-            if (searchResult.org_name && searchResult.org_id) {
-                const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
-                addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
-            }
+        if (searchResult?.org_name && searchResult?.org_id) {
+            const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
+            addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
         }
 
         fallbackDiv.appendChild(idsDiv);
@@ -3854,11 +3813,10 @@ async function runAvailabilityCheck(config) {
     const effectiveConfig = prepareConfig(JSON.parse(JSON.stringify(config)));
 
     try {
-        const allData = await fetchAllData(effectiveConfig);
+        // Use the new, centralized fetchAllData function from the API service.
+        const allData = await fetchAllDataFromService(effectiveConfig, debugInfo);
         await renderAllOutputs(allData, effectiveConfig);
     } catch (error) {
-        console.error("ERROR CAUGHT in runAvailabilityCheck's main try/catch block.");
-        console.error("Unhandled error in runAvailabilityCheck:", error);
         handleFetchError(error, document.getElementById('tab-panels'));
     } finally {
         // Generate the API call summary before finalizing the debug object.
