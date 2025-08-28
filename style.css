@@ -57,7 +57,7 @@ form {
 }
 
 .accordion-header {
-    background-color: #e7f3ff; /* A light, friendly blue */
+    background-color: #d9fded; /* A light, friendly green */
     color: #333;
     cursor: pointer;
     padding: 15px 20px;
@@ -73,7 +73,7 @@ form {
 }
 
 .accordion-header:hover {
-    background-color: #d0e8ff; /* A slightly darker blue for hover */
+    background-color: #a6d5c0; /* A slightly darker blue for hover */
 }
 
 .accordion-header .toggle-icon {
