@@ -51,42 +51,43 @@
                     </div>
                 </fieldset>
         
-                <!-- Display Toggles -->
+                <!-- Output & Display Options -->
                 <fieldset>
-                    <legend>Display & Tab Options</legend>
+                    <legend>Output & Display Options</legend>
+                    
+                    <!-- General Display Options -->
                     <div class="checkbox-grid">
-                        <label><input type="checkbox" name="showRawJsonTab" checked> Show Raw Campsites Tab</label>
-                        <label><input type="checkbox" name="showFullMetadataTab"> Show Raw Metadata Tab</label>
-                        <label><input type="checkbox" name="showRecGovSearchDataTab" checked> Show Raw Rec.gov Search Tab</label>
-                        <label><input type="checkbox" name="showDebugTab" checked> Show Debug Tab</label>
                         <label><input type="checkbox" id="sortBySiteFirst" name="sortBySiteFirst"> Sort by Site first (default is by Date)</label>
                         <label><input type="checkbox" name="showCampsiteIdColumn" id="showCampsiteIdColumn"> Show Campsite ID Column</label>
                     </div>
-                </fieldset>
-        
-                <!-- Tab Behavior Options -->
-                <fieldset>
-                    <legend>Tab Behavior Options</legend>
-                    <div class="form-grid">
-                        <label for="includeNotReservableInAvailableTab">Available Sites Tab:</label>
+
+                    <!-- Tab-Specific Content -->
+                    <div class="form-grid" style="margin-top: 1em; border-top: 1px solid #ccc; padding-top: 1em;">
+                        <label for="includeNotReservableInAvailableTab">'All Available' Tab:</label>
                         <label class="checkbox-label-inline"><input type="checkbox" id="includeNotReservableInAvailableTab" name="includeNotReservableInAvailableTab"> Include 'Walk-up' (FCFS)</label>
         
-                        <label for="filteredSitesTableContent">Filtered Sites Table Content:</label>
+                        <label for="filteredSitesTableContent">'Filtered Sites' Content:</label>
                         <select id="filteredSitesTableContent" name="filteredSitesTableContent">
                             <option value="available_or_not_reservable">'Available' & 'Walk-up'</option>
                             <option value="available_only">'Available' Only</option>
                             <option value="all">All Statuses</option>
                         </select>
         
-                        <label for="filteredSitesDetailFetch">Fetch Details For:</label>
+                        <label for="filteredSitesDetailFetch">'Filtered Sites' Details:</label>
                         <select id="filteredSitesDetailFetch" name="filteredSitesDetailFetch">
                             <option value="all_filtered">All Filtered Sites</option>
                             <option value="available_or_not_reservable">'Available' / 'Walk-up' Sites</option>
                             <option value="only_available">Only 'Available' Sites</option>
                         </select>
-        
-                        <label for="openDebugTabInNewWindow">Debug Tab:</label>
-                        <label class="checkbox-label-inline"><input type="checkbox" id="openDebugTabInNewWindow" name="openDebugTabInNewWindow"> Open in New Window</label>
+                    </div>
+
+                    <!-- Debugging & Raw Data Tabs -->
+                    <div class="checkbox-grid" style="margin-top: 1em; border-top: 1px solid #ccc; padding-top: 1em;">
+                        <label><input type="checkbox" name="showRawJsonTab"> Show Raw Campsites Tab</label>
+                        <label><input type="checkbox" name="showFullMetadataTab"> Show Raw Metadata Tab</label>
+                        <label><input type="checkbox" name="showRecGovSearchDataTab"> Show Raw Rec.gov Search Tab</label>
+                        <label><input type="checkbox" name="showDebugTab"> Show Debug Tab</label>
+                        <label><input type="checkbox" id="openDebugTabInNewWindow" name="openDebugTabInNewWindow"> Open Debug in New Window</label>
                     </div>
                 </fieldset>
         

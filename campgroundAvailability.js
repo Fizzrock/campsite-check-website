@@ -267,11 +267,11 @@ const config = {
         // Main Page Features
 
         // New Tab Toggles
-        showRawJsonTab: true, // If true, opens a new tab with the full raw JSON response from the availability API.
-        showFullMetadataTab: true, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
-        showCampsitesObjectTab: true, // For debugging, not yet implemented
-        showRecGovSearchDataTab: true, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
-        showDebugTab: true, // If true, opens a final tab with the entire `debugInfo` object for inspection.
+        showRawJsonTab: false, // If true, opens a new tab with the full raw JSON response from the availability API.
+        showFullMetadataTab: false, // If true, opens a new tab with the full JSON from the campground metadata endpoint.
+        showCampsitesObjectTab: false, // For debugging, not yet implemented
+        showRecGovSearchDataTab: false, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
+        showDebugTab: false, // If true, opens a final tab with the entire `debugInfo` object for inspection.
 
         // Column Toggles
         showCampsiteIdColumn: false // If true, shows the 'Campsite ID' column in data tables.
@@ -1382,18 +1382,7 @@ async function renderAllAvailableSitesSection(containerDiv, allCampsitesData, co
     };
     const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
-    const rowBuilder = (doc, rowData) => {
-        const tr = doc.createElement('tr');
-        tr.insertCell().textContent = rowData.site;
-        tr.insertCell().textContent = rowData.date;
-        const availabilityCell = tr.insertCell();
-        availabilityCell.textContent = rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE ? 'Walk-up' : rowData.availability;
-        availabilityCell.className = getAvailabilityClass(rowData.availability);
-        if (config.display.showCampsiteIdColumn) {
-            tr.insertCell().textContent = rowData.campsite_id;
-        }
-        return tr;
-    };
+    const rowBuilder = (doc, rowData) => createBaseAvailabilityRow(doc, rowData, config);
 
     const pageTitle = `All Available Campsites${includeNotReservable ? ' & Walk-Up (FCFS)' : ''}`;
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
@@ -1433,30 +1422,8 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
     };
     const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
-    // 2. Define the function that builds a single table row.
-    const rowBuilder = (doc, rowData, index) => {
-        const tr = doc.createElement('tr');
-        tr.insertCell().textContent = rowData.site;
-        tr.insertCell().textContent = rowData.date;
-        const availabilityCell = tr.insertCell();
-        if (rowData.availability === AVAILABILITY_STATUS.OPEN) {
-            availabilityCell.textContent = 'Extend Only';
-        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-            availabilityCell.textContent = 'Walk-up';
-            availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
-        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
-            availabilityCell.textContent = 'Cutoff';
-            availabilityCell.title = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
-            availabilityCell.className = getAvailabilityClass(rowData.availability); // Use a specific class
-        } else {
-            availabilityCell.textContent = rowData.availability;
-        }
-        availabilityCell.className = getAvailabilityClass(rowData.availability);
-        if (config.display.showCampsiteIdColumn) {
-            tr.insertCell().textContent = rowData.campsite_id;
-        }
-        return tr;
-    };
+    // 2. Define the function that builds a single table row using the shared helper.
+    const rowBuilder = (doc, rowData) => createBaseAvailabilityRow(doc, rowData, config);
 
     // New pre-table callback to render the summary
     const preTableRenderCallback = (doc, containerDiv) => {
@@ -1698,27 +1665,8 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
     const filteredRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
     // 2. Define the function that builds a single table row.
-    const rowBuilder = (doc, rowData, index) => {
-        const tr = doc.createElement('tr');
-        tr.insertCell().textContent = rowData.site;
-        tr.insertCell().textContent = rowData.date;
-        const availabilityCell = tr.insertCell();
-        if (rowData.availability === AVAILABILITY_STATUS.OPEN) {
-            availabilityCell.textContent = 'Extend Only';
-        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-            availabilityCell.textContent = 'Walk-up';
-            availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
-        } else if (rowData.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
-            availabilityCell.textContent = 'Cutoff';
-            availabilityCell.title = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
-            availabilityCell.className = getAvailabilityClass(rowData.availability);
-        } else {
-            availabilityCell.textContent = rowData.availability;
-        }
-        availabilityCell.className = getAvailabilityClass(rowData.availability);
-        if (config.display.showCampsiteIdColumn) {
-            tr.insertCell().textContent = rowData.campsite_id;
-        }
+    const rowBuilder = (doc, rowData) => {
+        const tr = createBaseAvailabilityRow(doc, rowData, config);
 
         // If no site filter is active, add a button for lazy-loading details.
         if (!isFilteringBySiteNumber) {
@@ -2569,6 +2517,50 @@ function getAvailabilityClass(availabilityStatus) {
 }
 
 /**
+ * Creates a standard table row (<tr>) for displaying availability data.
+ * This is a reusable helper to ensure consistency across different tables.
+ * @param {Document} doc The document object.
+ * @param {object} rowData The data for the row, including site, date, availability, etc.
+ * @param {object} config The application configuration object.
+ * @returns {HTMLTableRowElement} The constructed <tr> element.
+ */
+function createBaseAvailabilityRow(doc, rowData, config) {
+    const tr = doc.createElement('tr');
+    tr.insertCell().textContent = rowData.site;
+    tr.insertCell().textContent = rowData.date;
+
+    const availabilityCell = tr.insertCell();
+    let availabilityText = rowData.availability;
+    let availabilityTitle = '';
+
+    switch (rowData.availability) {
+        case AVAILABILITY_STATUS.OPEN:
+            availabilityText = 'Extend Only';
+            break;
+        case AVAILABILITY_STATUS.NOT_RESERVABLE:
+            availabilityText = 'Walk-up';
+            availabilityTitle = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
+            break;
+        case AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF:
+            availabilityText = 'Cutoff';
+            availabilityTitle = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
+            break;
+    }
+
+    availabilityCell.textContent = availabilityText;
+    if (availabilityTitle) {
+        availabilityCell.title = availabilityTitle;
+    }
+    availabilityCell.className = getAvailabilityClass(rowData.availability);
+
+    if (config.display.showCampsiteIdColumn) {
+        tr.insertCell().textContent = rowData.campsite_id;
+    }
+
+    return tr;
+}
+
+/**
  * Creates a reusable sorting function for campsite data rows.
  * This ensures consistent sorting behavior across all tables.
  * The sort order is determined by the primary key, with the other key used for tie-breaking.
@@ -3219,27 +3211,9 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
 
     applyTableColumnStyles(table, headers, document, 'main-availability');
 
-    rowsToSort.forEach((itemData) => {
-        const row = tbody.insertRow();
-        row.insertCell().textContent = itemData.site;
-        row.insertCell().textContent = itemData.date;
-        const availabilityCell = row.insertCell();
-        if (itemData.availability === AVAILABILITY_STATUS.OPEN) {
-            availabilityCell.textContent = 'Extend Only';
-        } else if (itemData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-            availabilityCell.textContent = 'Walk-up';
-            availabilityCell.title = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
-        } else if (itemData.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
-            availabilityCell.textContent = 'Cutoff';
-            availabilityCell.title = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
-            availabilityCell.classList.add(getAvailabilityClass(itemData.availability));
-        } else {
-            availabilityCell.textContent = itemData.availability;
-        }
-        availabilityCell.classList.add(getAvailabilityClass(itemData.availability));
-        if (config.display.showCampsiteIdColumn) {
-            row.insertCell().textContent = itemData.campsite_id;
-        }
+    rowsToSort.forEach(itemData => {
+        const row = createBaseAvailabilityRow(document, itemData, config);
+        tbody.appendChild(row);
     });
 }
 
