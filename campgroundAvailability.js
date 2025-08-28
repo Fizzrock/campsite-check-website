@@ -1128,7 +1128,15 @@ async function renderTabularDataInNewTab(options) {
     // Lightbox is already initialized on the main document.
 
     if (pageTitle) { // Only add H1 if a title is provided
-        addInfoElement(document, panel, 'h1', pageTitle);
+        const h1 = addInfoElement(document, panel, 'h1', pageTitle);
+        // Add a placeholder for the API status badge
+        if (h1) {
+            const badge = document.createElement('span');
+            badge.className = 'api-status-badge';
+            badge.style.display = 'none'; // Initially hidden
+            // Insert the badge *after* the h1, not inside it, to keep font size consistent.
+            h1.insertAdjacentElement('afterend', badge);
+        }
     }
 
     // Display Date Range and other common headers
@@ -1511,26 +1519,59 @@ function normalizeSiteName(name) {
 function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug = () => { }) {
     const idsForDetailFetch = new Set(); // Use a Set to avoid duplicates
     const fetchAvailableOnly = config.tabBehavior.fetchDetailsForAvailableOnly;
+    const siteNumbersToFilter = config.siteFilters.siteNumbersToFilter;
+    const isFilteringBySiteNumber = siteNumbersToFilter && siteNumbersToFilter.length > 0;
 
     logDebug(`'fetchDetailsForAvailableOnly' is ${fetchAvailableOnly}.`);
+    logDebug(`'isFilteringBySiteNumber' (user provided sites) is ${isFilteringBySiteNumber}.`);
 
-    // Iterate through the filteredRowsData to find sites that meet the criteria
-    filteredRowsData.forEach(row => {
-        if (row.availability === AVAILABILITY_STATUS.AVAILABLE) {
-            idsForDetailFetch.add(row.campsite_id);
-        } else if (!fetchAvailableOnly && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-            // Only add 'Not Reservable' if fetchAvailableOnly is false
-            idsForDetailFetch.add(row.campsite_id);
+    if (!fetchAvailableOnly && isFilteringBySiteNumber) {
+        // Scenario: User provided specific sites AND wants details for ALL of them (not just available).
+        // We need to get the campsite_ids for ALL sites in siteNumbersToFilter.
+        logDebug(`Including all ${siteNumbersToFilter.length} sites from user's filter list for detail fetching.`);
+
+        // Create a map from normalized site name to campsite_id for efficient lookup
+        const siteNameToCampsiteIdMap = new Map();
+        for (const campsiteId in allCampsitesData) {
+            const campsite = allCampsitesData[campsiteId];
+            siteNameToCampsiteIdMap.set(normalizeSiteName(campsite.site), campsite.campsite_id);
         }
-    });
+
+        siteNumbersToFilter.forEach(siteNum => {
+            const normalizedSiteNum = normalizeSiteName(siteNum);
+            const campsiteId = siteNameToCampsiteIdMap.get(normalizedSiteNum);
+            if (campsiteId) {
+                idsForDetailFetch.add(campsiteId);
+            } else {
+                logDebug(`Warning: Site '${siteNum}' (normalized: '${normalizedSiteNum}') from filter list not found in fetched availability data. Skipping for details.`);
+            }
+        });
+    } else {
+        // Scenario: fetchAvailableOnly is true OR no specific sites were provided by the user.
+        // We rely on the availability results from filteredRowsData.
+        logDebug(`Including sites based on availability from filteredRowsData.`);
+        filteredRowsData.forEach(row => {
+            if (row.availability === AVAILABILITY_STATUS.AVAILABLE) {
+                idsForDetailFetch.add(row.campsite_id);
+            } else if (!fetchAvailableOnly &&
+                       (row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE ||
+                        row.availability === AVAILABILITY_STATUS.OPEN)) {
+                idsForDetailFetch.add(row.campsite_id);
+            }
+        });
+    }
 
     // Convert Set to Array for sorting
     const finalIds = Array.from(idsForDetailFetch);
 
     logDebug(`Identified ${finalIds.length} site(s) for detail fetching.`);
 
-    // Sort the final list numerically based on the site number for consistent display order.
-    const siteNumberMap = new Map(Object.values(allCampsitesData).map(c => [c.campsite_id, parseInt(String(c.site).match(/\d+/)?.[0] || '0', 10)]));
+    // Sort the final list numerically based on the site number for consistent display order. (This part remains the same)
+    const siteNumberMap = new Map();
+    for (const cId in allCampsitesData) {
+        const campsite = allCampsitesData[cId];
+        siteNumberMap.set(campsite.campsite_id, parseInt(String(campsite.site).match(/\d+/)?.[0] || '0', 10));
+    }
     finalIds.sort((idA, idB) => (siteNumberMap.get(idA) || 0) - (siteNumberMap.get(idB) || 0));
     logDebug(`Sorted idsForDetailFetch: [${finalIds.join(', ')}]`);
 
@@ -3209,7 +3250,7 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
     badgePlaceholder.style.textAlign = 'left';
     badgePlaceholder.style.marginBottom = '10px';
     const badge = document.createElement('span');
-    badge.id = 'api-status-badge';
+    badge.className = 'api-status-badge';
     badge.style.display = 'none'; // Initially hidden
     badgePlaceholder.appendChild(badge);
 
@@ -3468,34 +3509,37 @@ function generateApiSummary(apiCalls) {
 }
 
 /**
- * Renders a status badge next to the main title indicating API call success or failure.
+ * Renders a status badge indicating API call success or failure.
+ * This function now updates all elements with the class 'api-status-badge'.
  * @param {object} summary The API summary object from `generateApiSummary`.
  */
 function renderApiStatusBadge(summary) {
-    const badge = document.getElementById('api-status-badge');
-    if (!badge) {
-        console.warn("API status badge element not found.");
+    const badges = document.querySelectorAll('.api-status-badge');
+    if (badges.length === 0) {
+        console.warn("No API status badge elements found.");
         return;
     }
 
-    // Reset badge state
-    badge.textContent = '';
-    badge.className = '';
-    badge.style.display = 'none';
+    badges.forEach(badge => {
+        // Reset badge state
+        badge.textContent = '';
+        badge.className = 'api-status-badge'; // Ensure the base class is always present
+        badge.style.display = 'none';
 
-    if (!summary || summary.totalCalls === 0) {
-        return; // Don't show the badge if no API calls were made
-    }
+        if (!summary || summary.totalCalls === 0) {
+            return; // Don't show the badge if no API calls were made
+        }
 
-    if (summary.failedCalls > 0) {
-        badge.textContent = `API: ${summary.failedCalls} Failed`;
-        badge.className = 'api-status-failure';
-    } else {
-        badge.textContent = 'API: OK';
-        badge.className = 'api-status-success';
-    }
+        if (summary.failedCalls > 0) {
+            badge.textContent = `API: ${summary.failedCalls} Failed`;
+            badge.classList.add('failed');
+        } else {
+            badge.textContent = 'API: OK';
+            badge.classList.add('ok');
+        }
 
-    badge.style.display = 'inline-block';
+        badge.style.display = 'inline-block';
+    });
 }
 
 /**
@@ -3670,12 +3714,12 @@ async function handleFormSubmit(event) {
         submitButton.disabled = true;
         submitButton.textContent = 'Loading...';
 
-        // Clear previous API status badge
-        const apiBadge = document.getElementById('api-status-badge');
-        if (apiBadge) {
-            apiBadge.style.display = 'none';
-            apiBadge.className = '';
-        }
+        // Clear previous API status badges
+        const apiBadges = document.querySelectorAll('.api-status-badge');
+        apiBadges.forEach(badge => {
+            badge.style.display = 'none';
+            badge.className = 'api-status-badge';
+        });
 
         // Prepare the new tabbed interface for results
         const resultsTabsContainer = document.getElementById('results-tabs-container');
@@ -3971,48 +4015,11 @@ async function initializePage() {
     form.addEventListener('submit', handleFormSubmit);
     copyLinkButton.addEventListener('click', handleCopyLink);
     presetSelector.addEventListener('change', handlePresetChange);
-
-    injectApiStatusBadgeStyles();
-
+    
     console.log("Page initialized. Ready for user input.");
 }
 
-/**
- * Injects the CSS for the API status badge into the document's head.
- * This keeps the styling self-contained within the script.
- */
-function injectApiStatusBadgeStyles() {
-    const styleId = 'api-status-badge-styles';
-    if (document.getElementById(styleId)) return;
 
-    const css = `
-        #api-status-badge {
-            display: inline-block;
-            padding: 0.25em 0.6em;
-            font-size: 0.75em;
-            font-weight: 700;
-            line-height: 1;
-            text-align: center;
-            white-space: nowrap;
-            vertical-align: baseline;
-            border-radius: 0.375rem;
-            color: #fff;
-        }
-        .api-status-success {
-            background-color: #28a745; /* Green */
-        }
-        .api-status-failure {
-            background-color: #dc3545; /* Red */
-        }
-    `;
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = css;
-    document.head.appendChild(style);
-}
-
-// --- Script Entry Point ---
-// The script now starts by listening for the DOM to be ready.
 document.addEventListener('DOMContentLoaded', initializePage);
 
 // The script is now controlled by event listeners, so we no longer call this automatically.

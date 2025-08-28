@@ -482,6 +482,23 @@ td:nth-child(6) {
     border-bottom: 1px solid #ddd;
 }
 
+/* --- API Status Badge --- */
+.api-status-badge {
+    font-size: 0.7em;
+    padding: 0.2em 0.6em;
+    border-radius: 10px;
+    font-weight: bold;
+    color: white;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+.api-status-badge.ok {
+    background-color: #28a745; /* green */
+}
+.api-status-badge.failed {
+    background-color: #dc3545; /* red */
+}
+
 /* ==========================================================================
    Responsive Design for Mobile
    ========================================================================== */
