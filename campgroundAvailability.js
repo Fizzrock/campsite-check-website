@@ -2767,6 +2767,30 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
         mapFrame.loading = 'lazy';
         mapFrame.referrerPolicy = 'no-referrer-when-downgrade';
         parentElement.appendChild(mapFrame);
+
+        // --- Add OpenStreetMap View ---
+        const osmHeader = addInfoElement(document, parentElement, 'h3', 'OpenStreetMap View');
+        if (osmHeader) {
+            osmHeader.style.marginTop = '20px';
+            osmHeader.style.paddingTop = '15px';
+            osmHeader.style.borderTop = '1px solid #eee';
+        }
+
+        const osmMapFrame = document.createElement('iframe');
+        // Create a small bounding box around the point for a reasonable zoom level
+        const bboxOffset = 0.01;
+        const lon1 = facilityLon - bboxOffset;
+        const lat1 = facilityLat - bboxOffset;
+        const lon2 = facilityLon + bboxOffset;
+        const lat2 = facilityLat + bboxOffset;
+
+        osmMapFrame.src = `https://www.openstreetmap.org/export/embed.html?bbox=${lon1},${lat1},${lon2},${lat2}&layer=mapnik&marker=${facilityLat},${facilityLon}`;
+        osmMapFrame.width = '100%';
+        osmMapFrame.height = '300';
+        osmMapFrame.style.border = '0';
+        osmMapFrame.style.borderRadius = '4px';
+        osmMapFrame.style.marginTop = '10px';
+        parentElement.appendChild(osmMapFrame);
     }
 
     if (facilityDetails.FACILITYADDRESS && facilityDetails.FACILITYADDRESS.length > 0) {
