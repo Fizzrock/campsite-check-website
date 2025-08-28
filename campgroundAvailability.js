@@ -919,6 +919,29 @@ function openInNewWindow(title) {
 }
 
 /**
+ * Generates a dynamic array of table headers based on the user's sorting preference.
+ * This ensures the column order always matches the primary sort key.
+ * @param {object} config The main configuration object, used to check `config.sorting.primarySortKey`.
+ * @param {boolean} showCampsiteIdColumn If true, the 'Campsite ID' column will be included.
+ * @param {boolean} includeActions If true, the 'Actions' column will be included.
+ * @returns {string[]} An array of strings representing the ordered table headers.
+ */
+function getDynamicTableHeaders(config, showCampsiteIdColumn, includeActions) {
+    const primarySortKey = config.sorting.primarySortKey;
+    let baseHeaders = [];
+
+    // Set the first two columns based on the primary sort key
+    baseHeaders = (primarySortKey === 'site')
+        ? ['Site', 'Date', 'Availability']
+        : ['Date', 'Site', 'Availability']; // Default to 'date' first
+
+    if (showCampsiteIdColumn) baseHeaders.push('Campsite ID');
+    if (includeActions) baseHeaders.push('Actions');
+
+    return baseHeaders;
+}
+
+/**
  * Creates and appends a basic <table> element with a header row to a parent element.
  * @param {Document} doc The document in which to create the elements.
  * @param {string[]} headersArray An array of strings for the table headers.
@@ -1386,7 +1409,8 @@ async function renderAllAvailableSitesSection(containerDiv, allCampsitesData, co
     };
     const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
-    const rowBuilder = (doc, rowData) => createBaseAvailabilityRow(doc, rowData, config);
+    const headers = getDynamicTableHeaders(config, config.display.showCampsiteIdColumn, false);
+    const rowBuilder = (doc, rowData) => createBaseAvailabilityRow(doc, rowData, headers);
 
     const pageTitle = `All Available Campsites${includeNotReservable ? ' & Walk-Up (FCFS)' : ''}`;
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
@@ -1399,7 +1423,7 @@ async function renderAllAvailableSitesSection(containerDiv, allCampsitesData, co
     const tableOptions = {
         tabTitle: 'AllAvailableSites', // A non-rendered title used for generating CSS classes.
         dataRows: availableRowsData,
-        headers: ["Site", "Date", "Availability"].concat(config.display.showCampsiteIdColumn ? ["Campsite ID"] : []),
+        headers: headers,
         config, allCampsitesData, requestDateTime, response, sortDescription, rowBuilder,
         noDataMessage: "No 'Available' or 'Walk-Up (FCFS)' campsites found for the selected period.",
         isTableCollapsible: true,
@@ -1648,6 +1672,8 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
     const showAllStatuses = config.tabBehavior.showAllFilteredSitesStatuses;
     const isFilteringBySiteNumber = siteNumbersToFilterArray && siteNumbersToFilterArray.length > 0;
     const normalizedSiteNumbersToFilter = siteNumbersToFilterArray.map(normalizeSiteName);
+    
+    const headers = getDynamicTableHeaders(config, config.display.showCampsiteIdColumn, !isFilteringBySiteNumber);
 
     // 1. Use the new generic processor to filter and sort the data.
     const rowFilter = (campsite, availability) => {
@@ -1674,7 +1700,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
 
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData) => {
-        const tr = createBaseAvailabilityRow(doc, rowData, config);
+        const tr = createBaseAvailabilityRow(doc, rowData, headers);
 
         // If no site filter is active, add a button for lazy-loading details.
         if (!isFilteringBySiteNumber) {
@@ -1949,14 +1975,6 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
     const pageTitle = `Filtered Campsite Availability - ${campgroundMetadata?.facility_name || config.api.campgroundId}`;
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
     const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"})`;
-
-    const headers = ["Site", "Date", "Availability"];
-    if (config.display.showCampsiteIdColumn) {
-        headers.push("Campsite ID");
-    }
-    if (!isFilteringBySiteNumber) {
-        headers.push("Actions");
-    }
 
     await renderTabularDataInNewTab({
         tabTitle: tabTitle,
@@ -2519,44 +2537,51 @@ function getAvailabilityClass(availabilityStatus) {
 
 /**
  * Creates a standard table row (<tr>) for displaying availability data.
- * This is a reusable helper to ensure consistency across different tables.
+ * This is a reusable helper that dynamically creates cells based on the provided headers array,
+ * ensuring consistency and correct column order across all tables.
  * @param {Document} doc The document object.
  * @param {object} rowData The data for the row, including site, date, availability, etc.
- * @param {object} config The application configuration object.
+ * @param {string[]} headers The ordered array of headers for the table.
  * @returns {HTMLTableRowElement} The constructed <tr> element.
  */
-function createBaseAvailabilityRow(doc, rowData, config) {
+function createBaseAvailabilityRow(doc, rowData, headers) {
     const tr = doc.createElement('tr');
-    tr.insertCell().textContent = rowData.site;
-    tr.insertCell().textContent = rowData.date;
 
-    const availabilityCell = tr.insertCell();
-    let availabilityText = rowData.availability;
-    let availabilityTitle = '';
+    headers.forEach(header => {
+        const cell = tr.insertCell();
+        switch (header) {
+            case 'Site':
+                cell.textContent = rowData.site;
+                break;
+            case 'Date':
+                cell.textContent = rowData.date;
+                break;
+            case 'Availability':
+                let availabilityText = rowData.availability;
+                let availabilityTitle = '';
 
-    switch (rowData.availability) {
-        case AVAILABILITY_STATUS.OPEN:
-            availabilityText = 'Extend Only';
-            break;
-        case AVAILABILITY_STATUS.NOT_RESERVABLE:
-            availabilityText = 'Walk-up';
-            availabilityTitle = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
-            break;
-        case AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF:
-            availabilityText = 'Cutoff';
-            availabilityTitle = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
-            break;
-    }
+                if (rowData.availability === AVAILABILITY_STATUS.OPEN) {
+                    availabilityText = 'Extend Only';
+                } else if (rowData.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+                    availabilityText = 'Walk-up';
+                    availabilityTitle = 'This site is not available for online reservation but may be available on-site on a first-come, first-served basis.';
+                } else if (rowData.availability === AVAILABILITY_STATUS.NOT_AVAILABLE_CUTOFF) {
+                    availabilityText = 'Cutoff';
+                    availabilityTitle = 'This date is within the booking cutoff window and is no longer available for online reservation. It may be available for walk-up (FCFS) at the campground.';
+                }
 
-    availabilityCell.textContent = availabilityText;
-    if (availabilityTitle) {
-        availabilityCell.title = availabilityTitle;
-    }
-    availabilityCell.className = getAvailabilityClass(rowData.availability);
-
-    if (config.display.showCampsiteIdColumn) {
-        tr.insertCell().textContent = rowData.campsite_id;
-    }
+                cell.textContent = availabilityText;
+                if (availabilityTitle) cell.title = availabilityTitle;
+                cell.className = getAvailabilityClass(rowData.availability);
+                break;
+            case 'Campsite ID':
+                cell.textContent = rowData.campsite_id;
+                break;
+            case 'Actions':
+                // This cell is intentionally left blank. It will be populated by the calling function if needed.
+                break;
+        }
+    });
 
     return tr;
 }
@@ -3204,16 +3229,13 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
     const mainSortInfo = addInfoElement(document, tableContainer, 'p', sortDescription, 'sort-info');
     if (mainSortInfo) mainSortInfo.style.fontStyle = 'italic';
 
-    const headers = ["Site", "Date", "Availability"];
-    if (config.display.showCampsiteIdColumn) {
-        headers.push("Campsite ID");
-    }
+    const headers = getDynamicTableHeaders(config, config.display.showCampsiteIdColumn, false);
     const { table, tbody } = createTableStructure(document, headers, tableContainer);
 
     applyTableColumnStyles(table, headers, document, 'main-availability');
 
     rowsToSort.forEach(itemData => {
-        const row = createBaseAvailabilityRow(document, itemData, config);
+        const row = createBaseAvailabilityRow(document, itemData, headers);
         tbody.appendChild(row);
     });
 }
