@@ -2752,7 +2752,22 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
         facilityLat = facilityDetails.GEOJSON.COORDINATES[1];
         facilityLon = facilityDetails.GEOJSON.COORDINATES[0];
     }
-    if (facilityLat && facilityLon) addDetail("Coordinates", `<a href="https://www.google.com/maps?q=${facilityLat},${facilityLon}" target="_blank">${facilityLat}, ${facilityLon} (View on Map)</a>`, true);
+    if (facilityLat && facilityLon) {
+        addDetail("Coordinates", `<a href="https://www.google.com/maps?q=${facilityLat},${facilityLon}" target="_blank">${facilityLat}, ${facilityLon} (View on Map)</a>`, true);
+
+        // --- Add Interactive Map ---
+        const mapFrame = document.createElement('iframe');
+        mapFrame.src = `https://maps.google.com/maps?q=${facilityLat},${facilityLon}&z=14&output=embed`;
+        mapFrame.width = '100%';
+        mapFrame.height = '300';
+        mapFrame.style.border = '0';
+        mapFrame.style.borderRadius = '4px';
+        mapFrame.style.marginTop = '10px';
+        mapFrame.allowFullscreen = true;
+        mapFrame.loading = 'lazy';
+        mapFrame.referrerPolicy = 'no-referrer-when-downgrade';
+        parentElement.appendChild(mapFrame);
+    }
 
     if (facilityDetails.FACILITYADDRESS && facilityDetails.FACILITYADDRESS.length > 0) {
         const address = facilityDetails.FACILITYADDRESS[0];
