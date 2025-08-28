@@ -55,34 +55,21 @@
                 <fieldset>
                     <legend>Output & Display Options</legend>
                     
-                    <!-- General Display Options -->
                     <div class="checkbox-grid">
+                        <!-- General Display -->
                         <label><input type="checkbox" id="sortBySiteFirst" name="sortBySiteFirst"> Sort by Site first (default is by Date)</label>
                         <label><input type="checkbox" name="showCampsiteIdColumn" id="showCampsiteIdColumn"> Show Campsite ID Column</label>
+                        
+                        <!-- Tab Content -->
+                        <label><input type="checkbox" id="includeNotReservableInAvailableTab" name="includeNotReservableInAvailableTab"> Exclude 'Walk-up' sites</label>
+                        <label><input type="checkbox" id="showAllFilteredSitesStatuses" name="showAllFilteredSitesStatuses"> Show All Reservation Statuses</label>
+                        <label><input type="checkbox" id="fetchDetailsForAvailableOnly" name="fetchDetailsForAvailableOnly"> Show Details for 'Available' only</label>
                     </div>
 
-                    <!-- Tab-Specific Content -->
-                    <div class="form-grid" style="margin-top: 1em; border-top: 1px solid #ccc; padding-top: 1em;">
-                        <label for="includeNotReservableInAvailableTab">'All Available' Tab:</label>
-                        <label class="checkbox-label-inline"><input type="checkbox" id="includeNotReservableInAvailableTab" name="includeNotReservableInAvailableTab"> Include 'Walk-up' (FCFS)</label>
-        
-                        <label for="filteredSitesTableContent">'Filtered Sites' Content:</label>
-                        <select id="filteredSitesTableContent" name="filteredSitesTableContent">
-                            <option value="available_or_not_reservable">'Available' & 'Walk-up'</option>
-                            <option value="available_only">'Available' Only</option>
-                            <option value="all">All Statuses</option>
-                        </select>
-        
-                        <label for="filteredSitesDetailFetch">'Filtered Sites' Details:</label>
-                        <select id="filteredSitesDetailFetch" name="filteredSitesDetailFetch">
-                            <option value="all_filtered">All Filtered Sites</option>
-                            <option value="available_or_not_reservable">'Available' / 'Walk-up' Sites</option>
-                            <option value="only_available">Only 'Available' Sites</option>
-                        </select>
-                    </div>
+                    <hr class="options-separator">
 
-                    <!-- Debugging & Raw Data Tabs -->
-                    <div class="checkbox-grid" style="margin-top: 1em; border-top: 1px solid #ccc; padding-top: 1em;">
+                    <div class="checkbox-grid">
+                        <!-- Debugging & Raw Data Tabs -->
                         <label><input type="checkbox" name="showRawJsonTab"> Show Raw Campsites Tab</label>
                         <label><input type="checkbox" name="showFullMetadataTab"> Show Raw Metadata Tab</label>
                         <label><input type="checkbox" name="showRecGovSearchDataTab"> Show Raw Rec.gov Search Tab</label>

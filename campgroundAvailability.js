@@ -281,16 +281,11 @@ const config = {
     ////////////////////////////////////////
     tabBehavior: {
         // "Available Sites" Tab Settings
-        includeNotReservableInAvailableTab: true, // If true, the "Available Sites" tab will also include sites marked "Not Reservable".
+        includeNotReservableInAvailableTab: false, // If true, the "Available Sites" tab will *exclude* sites marked "Not Reservable".
 
-        // "Filtered Sites" Tab Settings
-        showFilteredSitesAvailableOnly: true, // If true, the "Filtered Sites" tab will only show entries for sites that are "Available".
-        showFilteredSitesNotReservableOnly: true, // If true, the "Filtered Sites" tab will also include "Not Reservable" sites.
-
-        // "Filtered Sites" Detail Fetching (these flags control fetching rich data like photos for specific sites)
-        fetchDetailsForAllFilteredSites: true, // If true, fetches details for ALL sites in the filter list, regardless of status. Overrides the two flags below.
-        fetchDetailsForAvailableFilteredSites: true, // If true, fetches details for any site in the filter list that has an "Available" day.
-        fetchDetailsForNotReservableFilteredSites: true, // If true, fetches details for any site in the filter list that has a "Not Reservable" day.
+        // "Filtered Sites" Tab Settings - these flags control fetching rich data like photos for specific sites
+        showAllFilteredSitesStatuses: false, // If true, the "Filtered Sites" tab will show all statuses (Reserved, Closed, etc.). If false, it shows only 'Available' and 'Walk-up'.        
+        fetchDetailsForAvailableOnly: false, // If true, fetches details only for 'Available' sites. If false, fetches for 'Available' and 'Walk-up' sites.
 
         openDebugTabInNewWindow: false // If true, the debug tab opens in a new window instead of an in-page tab.
     },
@@ -1378,7 +1373,8 @@ async function renderAllAvailableSitesSection(containerDiv, allCampsitesData, co
     const includeNotReservable = config.tabBehavior.includeNotReservableInAvailableTab;
 
     const rowFilter = (_campsite, availability) => {
-        return availability === AVAILABILITY_STATUS.AVAILABLE || (includeNotReservable && availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
+        return availability === AVAILABILITY_STATUS.AVAILABLE ||
+               (!includeNotReservable && availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
     };
     const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
@@ -1418,7 +1414,8 @@ async function displayAvailableSitesInNewTab(allCampsitesData, availabilityCount
 
     // 1. Use the new generic processor to filter and sort the data.
     const rowFilter = (_campsite, availability) => {
-        return availability === AVAILABILITY_STATUS.AVAILABLE || (includeNotReservable && availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
+        return availability === AVAILABILITY_STATUS.AVAILABLE ||
+               (!includeNotReservable && availability === AVAILABILITY_STATUS.NOT_RESERVABLE);
     };
     const availableRowsData = processAndSortAvailability(allCampsitesData, config, rowFilter, config.sorting.primarySortKey);
 
@@ -1511,59 +1508,33 @@ function normalizeSiteName(name) {
  * @param {function(string): void} logDebug - A logging function for in-tab diagnostics.
  * @returns {Array<string>} A sorted array of campsite IDs to fetch details for.
  */
-function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug = () => {}) {
-    console.log('[getSiteIdsForDetailFetch] Config flags: fetchDetailsForAllFilteredSites=', config.tabBehavior.fetchDetailsForAllFilteredSites, 'fetchDetailsForAvailableFilteredSites=', config.tabBehavior.fetchDetailsForAvailableFilteredSites);
-    const idsForDetailFetch = [];
+function getSiteIdsForDetailFetch(config, filteredRowsData, allCampsitesData, logDebug = () => { }) {
+    const idsForDetailFetch = new Set(); // Use a Set to avoid duplicates
+    const fetchAvailableOnly = config.tabBehavior.fetchDetailsForAvailableOnly;
 
-    if (config.tabBehavior.fetchDetailsForAllFilteredSites) {
-        logDebug(`'fetchDetailsForAllFilteredSites' is TRUE.`);
-        const siteNumbersToFilterArray = config.siteFilters.siteNumbersToFilter;
-        if (siteNumbersToFilterArray.length > 0 && allCampsitesData) {
-            const siteNameToIdMap = new Map(Object.values(allCampsitesData).map(c => [normalizeSiteName(c.site), c.campsite_id]));
-            console.log('[getSiteIdsForDetailFetch] Built siteNameToIdMap:', siteNameToIdMap);
-            siteNumbersToFilterArray.forEach(siteName => {
-                const campsiteId = siteNameToIdMap.get(normalizeSiteName(siteName));
-                if (campsiteId) idsForDetailFetch.push(campsiteId);
-                else logDebug(`- WARN: Could not find campsite_id for site name "${siteName}".`);
-            });
+    logDebug(`'fetchDetailsForAvailableOnly' is ${fetchAvailableOnly}.`);
+
+    // Iterate through the filteredRowsData to find sites that meet the criteria
+    filteredRowsData.forEach(row => {
+        if (row.availability === AVAILABILITY_STATUS.AVAILABLE) {
+            idsForDetailFetch.add(row.campsite_id);
+        } else if (!fetchAvailableOnly && row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
+            // Only add 'Not Reservable' if fetchAvailableOnly is false
+            idsForDetailFetch.add(row.campsite_id);
         }
-    } else {
-        logDebug(`'fetchDetailsForAllFilteredSites' is FALSE.`);
+    });
 
-        // Group rows by campsite_id for more efficient processing.
-        const sitesWithStatus = filteredRowsData.reduce((acc, row) => {
-            if (!acc[row.campsite_id]) {
-                acc[row.campsite_id] = { hasAvailable: false, hasNotReservable: false };
-            }
-            if (row.availability === AVAILABILITY_STATUS.AVAILABLE) {
-                acc[row.campsite_id].hasAvailable = true;
-            }
-            if (row.availability === AVAILABILITY_STATUS.NOT_RESERVABLE) {
-                acc[row.campsite_id].hasNotReservable = true;
-            }
-            return acc;
-        }, {});
+    // Convert Set to Array for sorting
+    const finalIds = Array.from(idsForDetailFetch);
 
-        // Determine which sites to fetch based on their statuses.
-        for (const cId in sitesWithStatus) {
-            const { hasAvailable, hasNotReservable } = sitesWithStatus[cId];
-            const shouldFetch = (config.tabBehavior.fetchDetailsForAvailableFilteredSites && hasAvailable) ||
-                              (config.tabBehavior.fetchDetailsForNotReservableFilteredSites && hasNotReservable);
-
-            if (shouldFetch) {
-                idsForDetailFetch.push(cId);
-            }
-        }
-    }
-
-    logDebug(`Identified ${idsForDetailFetch.length} site(s) for detail fetching.`);
+    logDebug(`Identified ${finalIds.length} site(s) for detail fetching.`);
 
     // Sort the final list numerically based on the site number for consistent display order.
     const siteNumberMap = new Map(Object.values(allCampsitesData).map(c => [c.campsite_id, parseInt(String(c.site).match(/\d+/)?.[0] || '0', 10)]));
-    idsForDetailFetch.sort((idA, idB) => (siteNumberMap.get(idA) || 0) - (siteNumberMap.get(idB) || 0));
-    logDebug(`Sorted idsForDetailFetch: [${idsForDetailFetch.join(', ')}]`);
+    finalIds.sort((idA, idB) => (siteNumberMap.get(idA) || 0) - (siteNumberMap.get(idB) || 0));
+    logDebug(`Sorted idsForDetailFetch: [${finalIds.join(', ')}]`);
 
-    return idsForDetailFetch;
+    return finalIds;
 }
 
 /**
@@ -1633,8 +1604,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
     }
 
     const siteNumbersToFilterArray = config.siteFilters.siteNumbersToFilter;
-    const availableOnlyConfig = config.tabBehavior.showFilteredSitesAvailableOnly;
-    const notReservableOnlyConfig = config.tabBehavior.showFilteredSitesNotReservableOnly;
+    const showAllStatuses = config.tabBehavior.showAllFilteredSitesStatuses;
     const isFilteringBySiteNumber = siteNumbersToFilterArray && siteNumbersToFilterArray.length > 0;
     const normalizedSiteNumbersToFilter = siteNumbersToFilterArray.map(normalizeSiteName);
 
@@ -1645,20 +1615,17 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
             return false;
         }
 
-        // If both are false, it means "Show All", so we don't filter by status.
-        if (!availableOnlyConfig && !notReservableOnlyConfig) {
+        // If "Show All Statuses" is checked, no further filtering is needed.
+        if (showAllStatuses) {
             return true;
         }
 
-        const allowedStatuses = [];
-        if (availableOnlyConfig) {
-            // "Available" also includes "Open" (Extend Only) for filtering purposes.
-            allowedStatuses.push(AVAILABILITY_STATUS.AVAILABLE, AVAILABILITY_STATUS.OPEN);
-        }
-        if (notReservableOnlyConfig) {
-            allowedStatuses.push(AVAILABILITY_STATUS.NOT_RESERVABLE);
-        }
-
+        // Otherwise, only show 'Available', 'Open' (Extend Only), and 'Not Reservable' (Walk-up).
+        const allowedStatuses = [
+            AVAILABILITY_STATUS.AVAILABLE,
+            AVAILABILITY_STATUS.OPEN,
+            AVAILABILITY_STATUS.NOT_RESERVABLE
+        ];
         return allowedStatuses.includes(availability);
     };
 
@@ -1929,17 +1896,10 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
 
         // --- Create main filter description header ---
         const siteFilterText = isFilteringBySiteNumber ? `Displaying sites: ${siteNumbersToFilterArray.join(", ")}` : `Displaying all sites`;
-        let statusFilterDescription = "";
-        if (!availableOnlyConfig && !notReservableOnlyConfig) {
-            statusFilterDescription = " (Showing All Statuses)";
-        } else if (availableOnlyConfig) {
-            statusFilterDescription = notReservableOnlyConfig ? " (Showing 'Available' OR 'Walk-Up (FCFS)')" : " (Showing 'Available' Only)";
-        } else if (notReservableOnlyConfig) {
-            statusFilterDescription = " (Showing 'Walk-Up (FCFS)' Only)";
-        } else {
-            // This case should not be hit with the new UI, but as a fallback:
-            statusFilterDescription = " (Showing All Statuses)";
-        }
+        const statusFilterDescription = showAllStatuses
+            ? " (Showing All Statuses, incl. Reserved)"
+            : " (Showing 'Available' & 'Walk-up' Only)";
+
         const filterDescriptionHeader = doc.createElement('h2');
         filterDescriptionHeader.textContent = `${siteFilterText}${statusFilterDescription}`;
         containerDiv.appendChild(filterDescriptionHeader);
@@ -3621,22 +3581,10 @@ function populateFormFromConfig(configObject) {
         const behavior = configObject.tabBehavior;
         document.getElementById('includeNotReservableInAvailableTab').checked = behavior.includeNotReservableInAvailableTab;
 
-        // Logic to set the 'Filtered Sites Table Content' dropdown
-        if (!behavior.showFilteredSitesAvailableOnly && !behavior.showFilteredSitesNotReservableOnly) {
-            document.getElementById('filteredSitesTableContent').value = 'all';
-        } else if (behavior.showFilteredSitesAvailableOnly && !behavior.showFilteredSitesNotReservableOnly) {
-            document.getElementById('filteredSitesTableContent').value = 'available_only';
-        } else { // Default case: both are true
-            document.getElementById('filteredSitesTableContent').value = 'available_or_not_reservable';
-        }
-
-        // Logic to set the 'Fetch Details For' dropdown
-        if (behavior.fetchDetailsForAllFilteredSites) {
-            document.getElementById('filteredSitesDetailFetch').value = 'all_filtered';
-        } else if (behavior.fetchDetailsForAvailableFilteredSites && behavior.fetchDetailsForNotReservableFilteredSites) {
-            document.getElementById('filteredSitesDetailFetch').value = 'available_or_not_reservable';
-        } else {
-            document.getElementById('filteredSitesDetailFetch').value = 'only_available';
+        // New logic for the "Show All Statuses" checkbox
+        document.getElementById('showAllFilteredSitesStatuses').checked = behavior.showAllFilteredSitesStatuses;
+        if (behavior.fetchDetailsForAvailableOnly !== undefined) {
+            document.getElementById('fetchDetailsForAvailableOnly').checked = behavior.fetchDetailsForAvailableOnly;
         }
 
         if (behavior.openDebugTabInNewWindow !== undefined) {
@@ -3686,43 +3634,12 @@ function buildConfigFromForm() {
     const behavior = newConfig.tabBehavior;
     behavior.includeNotReservableInAvailableTab = document.getElementById('includeNotReservableInAvailableTab').checked;
 
-    // Logic for 'Filtered Sites Table Content'
-    const tableContent = document.getElementById('filteredSitesTableContent').value;
-    switch (tableContent) {
-        case 'available_or_not_reservable':
-            behavior.showFilteredSitesAvailableOnly = true;
-            behavior.showFilteredSitesNotReservableOnly = true;
-            break;
-        case 'available_only':
-            behavior.showFilteredSitesAvailableOnly = true;
-            behavior.showFilteredSitesNotReservableOnly = false;
-            break;
-        case 'all':
-            behavior.showFilteredSitesAvailableOnly = false;
-            behavior.showFilteredSitesNotReservableOnly = false;
-            break;
-    }
+    // New logic for the "Show All Statuses" checkbox
+    behavior.showAllFilteredSitesStatuses = document.getElementById('showAllFilteredSitesStatuses').checked;
 
-    // Logic for 'Fetch Details For'
-    const detailFetch = document.getElementById('filteredSitesDetailFetch').value;
-    switch (detailFetch) {
-        case 'all_filtered':
-            behavior.fetchDetailsForAllFilteredSites = true;
-            // The other two flags don't matter when the master flag is true, but we can set them for consistency.
-            behavior.fetchDetailsForAvailableFilteredSites = true;
-            behavior.fetchDetailsForNotReservableFilteredSites = true;
-            break;
-        case 'available_or_not_reservable':
-            behavior.fetchDetailsForAllFilteredSites = false;
-            behavior.fetchDetailsForAvailableFilteredSites = true;
-            behavior.fetchDetailsForNotReservableFilteredSites = true;
-            break;
-        case 'only_available':
-            behavior.fetchDetailsForAllFilteredSites = false;
-            behavior.fetchDetailsForAvailableFilteredSites = true;
-            behavior.fetchDetailsForNotReservableFilteredSites = false;
-            break;
-    }
+    // New logic for the "Fetch for 'Available' sites only" checkbox
+    behavior.fetchDetailsForAvailableOnly = document.getElementById('fetchDetailsForAvailableOnly').checked;
+
     behavior.openDebugTabInNewWindow = document.getElementById('openDebugTabInNewWindow').checked;
 
     return newConfig;
@@ -3852,8 +3769,8 @@ function handleCopyLink() {
 
     // Add tab behavior parameters from the UI controls
     params.append('includeNotReservableInAvailableTab', document.getElementById('includeNotReservableInAvailableTab').checked);
-    params.append('filteredSitesTableContent', document.getElementById('filteredSitesTableContent').value);
-    params.append('filteredSitesDetailFetch', document.getElementById('filteredSitesDetailFetch').value);
+    params.append('showAllFilteredSitesStatuses', document.getElementById('showAllFilteredSitesStatuses').checked);
+    params.append('fetchDetailsAvailableOnly', document.getElementById('fetchDetailsForAvailableOnly').checked);
     params.append('openDebugTabInNewWindow', document.getElementById('openDebugTabInNewWindow').checked);
 
     const finalUrl = `${baseUrl}?${params.toString()}`;
@@ -4002,43 +3919,11 @@ async function initializePage() {
         initialConfig.tabBehavior.includeNotReservableInAvailableTab = urlParams.get('includeNotReservableInAvailableTab') === 'true';
     }
 
-    const tableContentFromUrl = urlParams.get('filteredSitesTableContent');
-    if (tableContentFromUrl) {
-        switch (tableContentFromUrl) {
-            case 'available_or_not_reservable':
-                initialConfig.tabBehavior.showFilteredSitesAvailableOnly = true;
-                initialConfig.tabBehavior.showFilteredSitesNotReservableOnly = true;
-                break;
-            case 'available_only':
-                initialConfig.tabBehavior.showFilteredSitesAvailableOnly = true;
-                initialConfig.tabBehavior.showFilteredSitesNotReservableOnly = false;
-                break;
-            case 'all':
-                initialConfig.tabBehavior.showFilteredSitesAvailableOnly = false;
-                initialConfig.tabBehavior.showFilteredSitesNotReservableOnly = false;
-                break;
-        }
+    if (urlParams.has('showAllFilteredSitesStatuses')) { // This was already here, keeping it.
+        initialConfig.tabBehavior.showAllFilteredSitesStatuses = urlParams.get('showAllFilteredSitesStatuses') === 'true';
     }
-
-    const detailFetchFromUrl = urlParams.get('filteredSitesDetailFetch');
-    if (detailFetchFromUrl) {
-        switch (detailFetchFromUrl) {
-            case 'all_filtered':
-                initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = true;
-                initialConfig.tabBehavior.fetchDetailsForAvailableFilteredSites = true;
-                initialConfig.tabBehavior.fetchDetailsForNotReservableFilteredSites = true;
-                break;
-            case 'available_or_not_reservable':
-                initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = false;
-                initialConfig.tabBehavior.fetchDetailsForAvailableFilteredSites = true;
-                initialConfig.tabBehavior.fetchDetailsForNotReservableFilteredSites = true;
-                break;
-            case 'only_available':
-                initialConfig.tabBehavior.fetchDetailsForAllFilteredSites = false;
-                initialConfig.tabBehavior.fetchDetailsForAvailableFilteredSites = true;
-                initialConfig.tabBehavior.fetchDetailsForNotReservableFilteredSites = false;
-                break;
-        }
+    if (urlParams.has('fetchDetailsAvailableOnly')) {
+        initialConfig.tabBehavior.fetchDetailsForAvailableOnly = urlParams.get('fetchDetailsAvailableOnly') === 'true';
     }
 
     if (urlParams.has('openDebugTabInNewWindow')) {
@@ -4053,16 +3938,26 @@ async function initializePage() {
     if (accordionHeader) {
         const contentPanel = accordionHeader.nextElementSibling;
 
+        const updateAccordionHeight = () => {
+            // Only update height if the accordion is currently open
+            if (accordionHeader.classList.contains('active')) {
+                contentPanel.style.maxHeight = contentPanel.scrollHeight + "px";
+            }
+        };
+
         accordionHeader.addEventListener('click', function() {
             this.classList.toggle('active');
             if (contentPanel.style.maxHeight) {
                 // If it has a maxHeight, it's open, so close it
                 contentPanel.style.maxHeight = null;
             } else {
-                // If it's closed, open it to its full content height
-                contentPanel.style.maxHeight = contentPanel.scrollHeight + "px";
+                // If it's closed, use the helper to set the height
+                updateAccordionHeight();
             }
         });
+
+        // Add a resize listener to handle orientation changes or window resizing
+        window.addEventListener('resize', updateAccordionHeight);
 
         // --- Make the accordion open by default on page load ---
         // We do this after a tiny delay to allow the browser to render everything,
