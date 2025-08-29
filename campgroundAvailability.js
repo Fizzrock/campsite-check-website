@@ -1684,6 +1684,10 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
     const isFilteringBySiteNumber = siteNumbersToFilterArray && siteNumbersToFilterArray.length > 0;
     const normalizedSiteNumbersToFilter = siteNumbersToFilterArray.map(normalizeSiteName);
     
+    // This set will track which site numbers have already been assigned an ID in the table,
+    // preventing duplicate IDs which are invalid in HTML.
+    const handledSiteIdsForRowId = new Set();
+
     const headers = getDynamicTableHeaders(config, config.display.showCampsiteIdColumn, !isFilteringBySiteNumber);
 
     // 1. Use the new generic processor to filter and sort the data.
@@ -1712,6 +1716,12 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
     // 2. Define the function that builds a single table row.
     const rowBuilder = (doc, rowData) => {
         const tr = createBaseAvailabilityRow(doc, rowData, headers);
+
+        // Add a unique ID to the *first* row for each site for scroll-to-site functionality.
+        if (!isFilteringBySiteNumber && !handledSiteIdsForRowId.has(rowData.site)) {
+            tr.id = `site-table-row-${rowData.site}`;
+            handledSiteIdsForRowId.add(rowData.site);
+        }
 
         // If no site filter is active, add a button for lazy-loading details.
         if (!isFilteringBySiteNumber) {
@@ -1817,6 +1827,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
                     // Create the summary button
                     const summaryButton = doc.createElement('button');
                     summaryButton.className = 'collapsible-summary';
+                    summaryButton.id = `site-detail-header-${campsiteDetails.CampsiteName}`; // Add unique ID for scrolling
                     const baseButtonText = `Site: ${campsiteDetails.CampsiteName}`;                    
                     summaryButton.innerHTML = `<strong>${baseButtonText}</strong>${compactSummaryText}`;
                     summaryButton.title = `${baseButtonText}\n${tooltipText}`;
@@ -1857,6 +1868,43 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
                     } else {
                         content.style.display = 'block';
                     }
+                }
+            }
+        });
+
+        // Add a delegated event listener for the new summary-to-detail scroll links.
+        containerDiv.addEventListener('click', (event) => {
+            const link = event.target.closest('a.summary-site-link');
+            if (!link) return;
+
+            event.preventDefault();
+            const siteName = link.dataset.siteName;
+            if (!siteName) return;
+
+            const targetId = isFilteringBySiteNumber
+                ? `site-detail-header-${siteName}`
+                : `site-table-row-${siteName}`;
+
+            const targetElement = doc.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                // Enhancement: If in filtered mode, expand the accordion if it's not already active.
+                if (isFilteringBySiteNumber && targetElement.classList.contains('collapsible-summary') && !targetElement.classList.contains('active')) {
+                    targetElement.click();
+                }
+
+                // Enhancement: If in all sites mode, highlight the row briefly using the CSS animation.
+                if (!isFilteringBySiteNumber && targetElement.tagName === 'TR') {
+                    // Delay the start of the animation to give the scroll time to finish.
+                    setTimeout(() => {
+                        // Add the class to trigger the animation.
+                        targetElement.classList.add('row-highlight-pulse');
+                        // Remove the class after the animation completes so it can be re-triggered.
+                        setTimeout(() => {
+                            targetElement.classList.remove('row-highlight-pulse');
+                        }, 2000); // Must match the animation-duration in CSS.
+                    }, 500); // 300ms delay for scroll to settle.
                 }
             }
         });
@@ -1929,7 +1977,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
             Object.keys(dataBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
                 const dates = dataBySite[site].join(', ');
                 const li = doc.createElement('li');
-                li.innerHTML = `<strong>${site}:</strong> ${dates}`;
+                li.innerHTML = `<a href="#" class="summary-site-link" data-site-name="${site}"><strong>${site}</strong></a>: ${dates}`;
                 summaryList.appendChild(li);
             });
             detailsPanel.appendChild(summaryList);

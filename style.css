@@ -515,6 +515,22 @@ button[data-campsite-id]:hover {
     background-color: #dc3545; /* red */
 }
 
+/* --- Animation for Row Highlighting --- */
+@keyframes pulse-highlight {
+    0%, 50%, 100% {
+        background-color: transparent;
+    }
+    25%, 75% {
+        background-color: rgb(254, 173, 254);
+    }
+}
+
+.row-highlight-pulse {
+    animation-name: pulse-highlight;
+    animation-duration: 2s;
+    animation-timing-function: ease-in-out;
+}
+
 /* ==========================================================================
    Responsive Design for Mobile
    ========================================================================== */
