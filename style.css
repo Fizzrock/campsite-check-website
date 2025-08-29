@@ -482,6 +482,24 @@ td:nth-child(6) {
     border-bottom: 1px solid #ddd;
 }
 
+/* Style for the "Show Details" button in the filtered sites list */
+button[data-campsite-id] {
+    background-color: #17a2b8; /* A nice info-blue color */
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease;
+    width: 100%; /* Make button fill the cell */
+}
+
+button[data-campsite-id]:hover {
+    background-color: #138496; /* A darker shade for hover */
+}
+
+
 /* --- API Status Badge --- */
 .api-status-badge {
     font-size: 0.7em;

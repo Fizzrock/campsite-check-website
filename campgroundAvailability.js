@@ -1704,13 +1704,16 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
 
         // If no site filter is active, add a button for lazy-loading details.
         if (!isFilteringBySiteNumber) {
-            const detailsCell = tr.insertCell();
-            const detailsButton = doc.createElement('button');
-            detailsButton.textContent = 'Show Details';
-            detailsButton.dataset.campsiteId = rowData.campsite_id;
-            detailsButton.dataset.siteName = rowData.site;
-            // The event listener is attached in the postRenderCallback
-            detailsCell.appendChild(detailsButton);
+            const actionsColumnIndex = headers.indexOf('Actions');
+            if (actionsColumnIndex > -1) {
+                const detailsCell = tr.cells[actionsColumnIndex];
+                const detailsButton = doc.createElement('button');
+                detailsButton.textContent = 'Show Details';
+                detailsButton.dataset.campsiteId = rowData.campsite_id;
+                detailsButton.dataset.siteName = rowData.site;
+                // The event listener is attached in the postRenderCallback
+                detailsCell.appendChild(detailsButton);
+            }
         }
         return tr;
     };
@@ -1974,7 +1977,9 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
 
     const pageTitle = `Filtered Campsite Availability - ${campgroundMetadata?.facility_name || config.api.campgroundId}`;
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
-    const tabTitle = `Filtered Sites (${isFilteringBySiteNumber ? `${siteNumbersToFilterArray.length} sites` : "All"})`;
+    const tabTitle = isFilteringBySiteNumber
+        ? `Filtered Sites (${siteNumbersToFilterArray.length} sites)`
+        : 'All Sites';
 
     await renderTabularDataInNewTab({
         tabTitle: tabTitle,
