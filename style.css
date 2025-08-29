@@ -49,8 +49,9 @@ form {
     margin-bottom: 20px;
 }
 
-/* --- Accordion Styles for Configuration Section --- */
-#config-accordion-container {
+/* --- Accordion Styles for Main Sections --- */
+#config-accordion-container,
+#facility-search-accordion-container {
     border: 1px solid #ccc;
     border-radius: 8px;
     margin-bottom: 20px;
@@ -73,8 +74,17 @@ form {
     align-items: center;
 }
 
-.accordion-header:hover {
-    background-color: #a6d5c0; /* A slightly darker blue for hover */
+#config-accordion-container .accordion-header:hover {
+    background-color: #a6d5c0; /* A slightly darker green for hover */
+}
+
+/* Different color for the facility search to distinguish it */
+#facility-search-accordion-container .accordion-header {
+    background-color: #e9f5ff; /* A light, friendly blue */
+}
+
+#facility-search-accordion-container .accordion-header:hover {
+    background-color: #cce7ff;
 }
 
 .accordion-header .toggle-icon {
@@ -95,6 +105,12 @@ form {
 
 /* Remove margin and border from the form when it's inside the accordion */
 .accordion-content form {
+    margin: 0;
+    border: none;
+    border-top: 1px solid #ccc; /* Add a separator line */
+    border-radius: 0;
+}
+.accordion-content #facility-search-form {
     margin: 0;
     border: none;
     border-top: 1px solid #ccc; /* Add a separator line */
@@ -142,6 +158,81 @@ legend {
     font-size: 0.8em;
     color: #666;
     margin-top: -5px; /* Pull it a bit closer to the inputs above */
+}
+
+/* --- Styles for Facility Search --- */
+
+/* The form container inside the accordion */
+#facility-search-form {
+    display: flex;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    gap: 10px;
+    align-items: center;
+    padding: 15px;
+    background-color: #fff;
+}
+
+#facility-search-form label {
+    font-weight: 500;
+}
+
+#facility-search-form input[type="text"],
+#facility-search-form select {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1em;
+    flex-grow: 1; /* Allow input to grow */
+}
+
+#facility-search-form button {
+    padding: 8px 15px;
+    font-size: 1em;
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+#facility-search-form button:hover {
+    background-color: #0056b3;
+}
+
+/* The status message bar */
+#facility-search-status {
+    background-color: #eef7ff; /* Light blue, similar to .instructions */
+    border: 1px solid #b3d7f7;
+    border-radius: 4px;
+    padding: 10px 15px;
+    margin: 0 15px 15px 15px; /* Top, L/R, Bottom margin inside the accordion content */
+    font-size: 0.9em;
+}
+
+/* The results container */
+#facility-search-results {
+    padding: 0 15px 15px 15px; /* Padding to align with form */
+}
+
+#facility-search-results ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    max-height: 400px; /* Limit height and make it scrollable */
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+#facility-search-results li {
+    margin: 0;
+    padding: 0;
+    border-bottom: 1px solid #eee;
+}
+
+#facility-search-results li:last-child {
+    border-bottom: none;
 }
 
 table {
@@ -482,6 +573,26 @@ td:nth-child(6) {
     border-bottom: 1px solid #ddd;
 }
 
+.facility-result-button {
+    width: 100%;
+    padding: 12px 15px;
+    background-color: #fff;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 1em;
+    line-height: 1.4;
+}
+
+.facility-result-button:hover {
+    background-color: #f0f8ff; /* AliceBlue for hover */
+}
+
+.facility-result-button .facility-parent-org {
+    font-size: 0.9em;
+    color: #666;
+}
+
 /* Style for the "Show Details" button in the filtered sites list */
 button[data-campsite-id] {
     background-color: #17a2b8; /* A nice info-blue color */
@@ -547,6 +658,16 @@ button[data-campsite-id]:hover {
         flex-direction: column; /* Stack items vertically on mobile */
         font-size: 1.5em;
         gap: 0.1em; /* Reduce gap for vertical layout */
+    }
+
+    #facility-search-form {
+        flex-direction: column;
+        align-items: stretch; /* Make items full width */
+    }
+
+    #facility-search-form label {
+        text-align: left;
+        margin-bottom: -5px;
     }
 
     .form-grid {

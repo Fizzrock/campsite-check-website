@@ -49,6 +49,20 @@ const API_ROUTES = {
         requiredParams: ['facilityId', 'campsiteId'],
         needsApiKey: true,
     },
+    facilitySearch: {
+        urlTemplate: (p) => {
+            const searchParams = new URLSearchParams({
+                limit: p.limit || 50,
+                offset: p.offset || 0,
+            });
+            if (p.query) searchParams.set('query', p.query);
+            if (p.state) searchParams.set('state', p.state);
+            searchParams.set('sort', 'Name'); // Sort by name for consistent results
+            return `https://ridb.recreation.gov/api/v1/facilities?${searchParams.toString()}`;
+        },
+        requiredParams: ['query'], // state is optional
+        needsApiKey: true,
+    },
 };
 
 export default async function handler(request, response) {
@@ -76,7 +90,12 @@ export default async function handler(request, response) {
 
         let upstreamUrl = routeConfig.urlTemplate(params);
         if (routeConfig.needsApiKey) {
-            upstreamUrl += `?apikey=${apiKey}`;
+            // Append API key correctly, whether other query params exist or not
+            if (upstreamUrl.includes('?')) {
+                upstreamUrl += `&apikey=${apiKey}`;
+            } else {
+                upstreamUrl += `?apikey=${apiKey}`;
+            }
         }
 
         // 3. Fetch data from the upstream API

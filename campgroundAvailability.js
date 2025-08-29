@@ -156,6 +156,11 @@ import { fetchAllData as fetchAllDataFromService, fetchCampsiteDetails as fetchC
  * The hardcoded presets below, along with `activePreset`, are now only used to provide the
  * *initial default values* for the form when the page is loaded without any URL parameters.
  */
+const preset_blank = {
+    campgroundId: "",
+    sites: []
+};
+
 const preset_TuolumneMeadows = {
     campgroundId: "232448",
     sites: ['A040', 'A042', 'A044', 'A043', 'A038', 'A037', 'A034', 'A035', 'A033', 'A032', 'A028', 'A022', 'A020']
@@ -231,7 +236,7 @@ const datePreset_specificMonth = {
  * *initial default state* of the form when the page first loads. All subsequent
  * checks are driven by the values currently in the form fields.
  */
-const activePreset = preset_TuolumneMeadows;
+const activePreset = preset_blank;
 const activeDatePreset = datePreset_dynamic30Days;
 
 /*
@@ -483,6 +488,172 @@ function createInPageTab(title) {
     }
 
     return panel;
+}
+
+/**
+ * Initializes the facility search functionality, including populating the state
+ * dropdown and attaching all necessary event listeners.
+ */
+function initializeFacilitySearch() {
+    const queryInput = document.getElementById('facility-query');
+    const stateSelect = document.getElementById('facility-state');
+    const searchBtn = document.getElementById('facility-search-btn');
+    const statusDiv = document.getElementById('facility-search-status');
+    const resultsDiv = document.getElementById('facility-search-results');
+    const mainCampgroundIdInput = document.getElementById('campgroundId');
+    const mainSiteNumbersInput = document.getElementById('siteNumbers');
+    const campgroundNameDisplay = document.getElementById('campground-name-display');
+    const searchAccordionHeader = document.querySelector('#facility-search-accordion-container .accordion-header');
+    const searchAccordionContent = searchAccordionHeader ? searchAccordionHeader.nextElementSibling : null;
+    const configAccordionHeader = document.querySelector('#config-accordion-container .accordion-header');
+    const configAccordionContent = configAccordionHeader ? configAccordionHeader.nextElementSibling : null;
+
+    if (!queryInput || !stateSelect || !searchBtn || !statusDiv || !resultsDiv || !mainCampgroundIdInput || !mainSiteNumbersInput || !campgroundNameDisplay || !searchAccordionHeader || !searchAccordionContent || !configAccordionHeader || !configAccordionContent) {
+        console.error("One or more facility search UI elements are missing. Aborting initialization.");
+        return;
+    }
+
+    // --- Populate State Dropdown ---
+    const states = [
+        'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+        'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+        'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+        'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+        'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
+    ];
+    states.forEach(state => {
+        const option = document.createElement('option');
+        option.value = state;
+        option.textContent = state;
+        if (state === 'CA') option.selected = true;
+        stateSelect.appendChild(option);
+    });
+
+    // --- Main Search Logic ---
+    async function performSearch() {
+        const query = queryInput.value.trim();
+        const state = stateSelect.value;
+
+        if (!query) {
+            statusDiv.textContent = 'Please enter a search term.';
+            statusDiv.style.display = 'block';
+            return;
+        }
+
+        // Reset UI
+        statusDiv.textContent = 'Searching...';
+        statusDiv.style.display = 'block';
+        resultsDiv.innerHTML = '';
+        searchBtn.disabled = true;
+
+        // Ensure the accordion is open to show the status and results.
+        if (!searchAccordionHeader.classList.contains('active')) {
+            searchAccordionHeader.classList.add('active');
+        }
+        // Set an initial height for the "Searching..." message. It will be updated later.
+        searchAccordionContent.style.maxHeight = searchAccordionContent.scrollHeight + "px";
+
+        try {
+            const firstPageUrl = `/api/fetch-ridb?type=facilitySearch&query=${encodeURIComponent(query)}&state=${state}&limit=50&offset=0`;
+            const response = await fetch(firstPageUrl);
+            if (!response.ok) throw new Error(`API request failed with status: ${response.status}`);
+            const firstPageData = await response.json();
+
+            let allFacilities = firstPageData.RECDATA || [];
+            const totalCount = firstPageData.METADATA?.RESULTS?.TOTAL_COUNT || 0;
+            const limit = 50;
+
+            if (totalCount > limit) {
+                const totalPages = Math.ceil(totalCount / limit);
+                statusDiv.textContent = `Found ${totalCount} total results. Fetching all ${totalPages} pages...`;
+
+                const fetchPromises = [];
+                for (let i = 1; i < totalPages; i++) {
+                    const offset = i * limit;
+                    const pageUrl = `/api/fetch-ridb?type=facilitySearch&query=${encodeURIComponent(query)}&state=${state}&limit=${limit}&offset=${offset}`;
+                    fetchPromises.push(fetch(pageUrl).then(res => res.json()));
+                }
+
+                const otherPagesData = await Promise.all(fetchPromises);
+                otherPagesData.forEach(pageData => {
+                    if (pageData.RECDATA) allFacilities = allFacilities.concat(pageData.RECDATA);
+                });
+            }
+
+            const campgrounds = allFacilities.filter(facility => facility.FacilityTypeDescription === 'Campground');
+            renderResults(campgrounds);
+            statusDiv.textContent = `Search complete. Found ${campgrounds.length} campgrounds out of ${allFacilities.length} total facilities. Click a result to use it.`;
+
+        } catch (error) {
+            console.error('Facility search failed:', error);
+            statusDiv.textContent = `Error: ${error.message}`;
+        } finally {
+            searchBtn.disabled = false;
+            // After rendering, update the accordion height to fit the new content.
+            if (searchAccordionHeader.classList.contains('active')) {
+                searchAccordionContent.style.maxHeight = searchAccordionContent.scrollHeight + "px";
+            }
+        }
+    }
+
+    function renderResults(campgrounds) {
+        resultsDiv.innerHTML = ''; // Clear previous results
+        if (campgrounds.length === 0) {
+            resultsDiv.innerHTML = '<p>No campgrounds found matching your criteria.</p>';
+            return;
+        }
+
+        const ul = document.createElement('ul');
+        campgrounds.forEach(cg => {
+            const li = document.createElement('li');
+            const button = document.createElement('button');
+            button.className = 'facility-result-button';
+            button.dataset.facilityId = cg.FacilityID;
+
+            let parentOrgName = cg.ORGANIZATION?.[0]?.OrgName ? `(${cg.ORGANIZATION[0].OrgName})` : '';
+            button.innerHTML = `<strong>${cg.FacilityName} (${cg.FacilityID})</strong> <span class="facility-parent-org">${parentOrgName}</span>`;
+            
+            li.appendChild(button);
+            ul.appendChild(li);
+        });
+        resultsDiv.appendChild(ul);
+    }
+
+    function handleResultClick(event) {
+        const button = event.target.closest('.facility-result-button');
+        if (!button) return;
+
+        const facilityId = button.dataset.facilityId;
+        const facilityName = button.querySelector('strong')?.textContent;
+
+        mainCampgroundIdInput.value = facilityId;
+        mainSiteNumbersInput.value = ''; // Clear the site numbers field
+
+        if (facilityName && campgroundNameDisplay) {
+            campgroundNameDisplay.textContent = `Selected: ${facilityName}`;
+            campgroundNameDisplay.style.display = 'block';
+        }
+
+        // After showing the name, update the config accordion's height if it's open
+        if (configAccordionHeader.classList.contains('active')) {
+            configAccordionContent.style.maxHeight = configAccordionContent.scrollHeight + "px";
+        }
+
+        // If the accordion is open, click the header to collapse it, preserving the results.
+        if (searchAccordionHeader.classList.contains('active')) {
+            searchAccordionHeader.click();
+        }
+    }
+
+    // Add listener to hide the selected campground name if the user manually edits the ID.
+    mainCampgroundIdInput.addEventListener('input', () => {
+        if (campgroundNameDisplay.style.display !== 'none') {
+            campgroundNameDisplay.style.display = 'none';
+        }
+    });
+
+    searchBtn.addEventListener('click', performSearch);
+    resultsDiv.addEventListener('click', handleResultClick);
 }
 
 /**
@@ -3857,9 +4028,9 @@ async function handleFormSubmit(event) {
         await runAvailabilityCheck(dynamicConfig);
 
         // --- Automatically collapse the accordion AFTER results are shown ---
-        const accordionHeader = document.querySelector('.accordion-header');
-        if (accordionHeader && accordionHeader.classList.contains('active')) {
-            accordionHeader.click();
+        const configAccordionHeader = document.querySelector('#config-accordion-container .accordion-header');
+        if (configAccordionHeader && configAccordionHeader.classList.contains('active')) {
+            configAccordionHeader.click();
         }
 
     } finally {
@@ -4090,43 +4261,47 @@ async function initializePage() {
     populateFormFromConfig(initialConfig);
 
     // --- Accordion Logic ---
-    const accordionHeader = document.querySelector('.accordion-header');
-    if (accordionHeader) {
-        const contentPanel = accordionHeader.nextElementSibling;
+    const accordionHeaders = document.querySelectorAll('.accordion-header');
+    accordionHeaders.forEach(header => {
+        const contentPanel = header.nextElementSibling;
 
+        // Function to update height, useful for resizing
         const updateAccordionHeight = () => {
-            // Only update height if the accordion is currently open
-            if (accordionHeader.classList.contains('active')) {
+            if (header.classList.contains('active')) {
                 contentPanel.style.maxHeight = contentPanel.scrollHeight + "px";
             }
         };
 
-        accordionHeader.addEventListener('click', function() {
+        header.addEventListener('click', function() {
             this.classList.toggle('active');
             if (contentPanel.style.maxHeight) {
-                // If it has a maxHeight, it's open, so close it
                 contentPanel.style.maxHeight = null;
             } else {
-                // If it's closed, use the helper to set the height
-                updateAccordionHeight();
+                contentPanel.style.maxHeight = contentPanel.scrollHeight + "px";
             }
         });
 
-        // Add a resize listener to handle orientation changes or window resizing
         window.addEventListener('resize', updateAccordionHeight);
+    });
 
-        // --- Make the accordion open by default on page load ---
+    // --- Make the main config accordion open by default on page load ---
+    const configAccordionHeader = document.querySelector('#config-accordion-container .accordion-header');
+    if (configAccordionHeader) {
         // We do this after a tiny delay to allow the browser to render everything,
         // ensuring scrollHeight is calculated correctly.
         setTimeout(() => {
-            accordionHeader.click(); // Programmatically click to open it
+            if (!configAccordionHeader.classList.contains('active')) {
+                configAccordionHeader.click(); // Programmatically click to open it
+            }
         }, 100);
     }
 
-    // 3. Attach event listeners (handlers will be implemented in the next step)
     form.addEventListener('submit', handleFormSubmit);
     copyLinkButton.addEventListener('click', handleCopyLink);
     presetSelector.addEventListener('change', handlePresetChange);
+
+    // Initialize the new facility search feature
+    initializeFacilitySearch();
     
     console.log("Page initialized. Ready for user input.");
 }

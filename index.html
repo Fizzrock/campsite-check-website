@@ -14,9 +14,32 @@
         <img src="media/campground-solid-full.svg" alt="">
     </h1>
 
+    <div id="facility-search-accordion-container">
+        <h2 class="accordion-header">
+            <span>Find a Campground by Name</span>
+            <span class="toggle-icon">▼</span>
+        </h2>
+        <div class="accordion-content">
+            <div class="instructions" style="margin-top: 1em;">
+                <p>Use this search to find a campground's ID. Once you select a result, the ID will be filled in below.</p>
+            </div>
+            <div id="facility-search-form">
+                <label for="facility-query">Search Term:</label>
+                <input type="text" id="facility-query" placeholder="e.g., Rock Creek">
+
+                <label for="facility-state">State:</label>
+                <select id="facility-state"></select>
+
+                <button type="button" id="facility-search-btn">Find</button>
+            </div>
+            <div id="facility-search-status" class="request-info" style="display: none;"></div>
+            <div id="facility-search-results"></div>
+        </div>
+    </div>
+
     <div id="config-accordion-container">
         <h2 class="accordion-header">
-            Check for Campsites
+            <span>Check for Campsites</span>
             <span class="toggle-icon">▼</span>
         </h2>
         <div class="accordion-content">
@@ -38,8 +61,11 @@
                         <select id="preset-selector" name="preset-selector"></select>
         
                         <label for="campgroundId">Campground ID:</label>
-                        <input type="text" id="campgroundId" name="campgroundId" required placeholder="e.g.: 232448">
-        
+                        <div>
+                            <input type="text" id="campgroundId" name="campgroundId" required placeholder="e.g.: 232448 | ▲ Use tool above">
+                            <div id="campground-name-display" class="form-note" style="display: none; margin-top: 5px; font-weight: bold; color: #0056b3;"></div>
+                        </div>
+
                         <label for="filterStartDate">Start Date:</label>
                         <input type="date" id="filterStartDate" name="filterStartDate">
         
