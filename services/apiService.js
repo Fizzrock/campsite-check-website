@@ -303,98 +303,63 @@ export async function fetchRecGovSearchData(ids, debugInfo) {
  * @returns {Promise<AllFetchedData>} A promise that resolves to an object containing all fetched data.
  */
 export async function fetchAllData(config, debugInfo) {
-    debugInfo.timestamps.fetchStart = new Date().toISOString();
     const { campgroundId } = config.api;
 
-    // These fetches are not configurable in the UI, so we assume they are always wanted for the main page.
-    const shouldFetchFacilityDetails = true;
-    const shouldFetchRecAreaDetails = true;
-    const shouldFetchRecGovSearchData = true;
+    let campgroundMetadata = null;
+    let ids = null;
+    let availabilityResult = null;
 
-    // --- Step 1: Fetch foundational metadata to get correct RIDB IDs ---
+    // 1. Try to fetch essential campground metadata. This may fail for non-reservable sites.
     const metadataResult = await fetchCampgroundMetadata(campgroundId, debugInfo);
-    if (!metadataResult) {
-        throw new Error(`Failed to fetch essential campground metadata for ID ${campgroundId}. Cannot proceed.`);
-    }
-    const { ids, campgroundMetadata } = metadataResult;
 
-    // --- Step 2: Build and execute all other API requests concurrently ---
-    const dataPromises = {
-        availability: fetchAvailabilityData(config, debugInfo),
-        facilityDetails: shouldFetchFacilityDetails ? fetchFacilityDetails(ids, debugInfo) : Promise.resolve(null),
-        recAreaDetails: shouldFetchRecAreaDetails && ids.recAreaId ? fetchRecAreaDetails(ids, debugInfo) : Promise.resolve(null),
-        recAreaEvents: ids.recAreaId ? fetchRecAreaEvents(ids, debugInfo) : Promise.resolve(null),
-        recAreaMedia: ids.recAreaId ? fetchRecAreaMedia(ids, debugInfo) : Promise.resolve(null),
-        recGovSearchData: shouldFetchRecGovSearchData ? fetchRecGovSearchData(ids, debugInfo) : Promise.resolve(null),
-    };
-
-    const promiseResults = await Promise.allSettled(Object.values(dataPromises));
-    debugInfo.timestamps.fetchComplete = new Date().toISOString();
-
-    // --- Step 3: Process the results from all fetches ---
-    const [
-        availabilityResult,
-        facilityDetailsResult,
-        recAreaDetailsResult,
-        recAreaEventsResult,
-        recAreaMediaResult,
-        recGovSearchDataResult
-    ] = promiseResults;
-
-    const availabilityData = availabilityResult.status === 'fulfilled' ? availabilityResult.value : null;
-    let facilityDetails = facilityDetailsResult.status === 'fulfilled' ? facilityDetailsResult.value : null;
-    let recAreaDetails = recAreaDetailsResult.status === 'fulfilled' ? recAreaDetailsResult.value : null;
-    let eventsData = recAreaEventsResult.status === 'fulfilled' ? recAreaEventsResult.value : null;
-    let recAreaMedia = recAreaMediaResult.status === 'fulfilled' ? recAreaMediaResult.value : null;
-    let recGovSearchData = recGovSearchDataResult.status === 'fulfilled' ? recGovSearchDataResult.value : null;
-
-    // --- Step 4: ID Correction & Second-chance logic ---
-
-    // The facilityDetails response is the most reliable source for the true facilityId.
-    // Correct the ID if it differs from what the initial metadata provided. This handles cases
-    // where the metadata API returns an incorrect or outdated facilityId.
-    if (facilityDetails && facilityDetails.FacilityID) {
-        if (ids.facilityId !== facilityDetails.FacilityID) {
-            console.warn(`[fetchAllData] Correcting facilityId. Metadata gave ${ids.facilityId}, but facility details gave ${facilityDetails.FacilityID}. Using the latter.`);
-            ids.facilityId = facilityDetails.FacilityID;
-        }
+    if (metadataResult) {
+        // Success path: Metadata was found.
+        campgroundMetadata = metadataResult.campgroundMetadata;
+        ids = metadataResult.ids;
+    } else {
+        // Failure path: Metadata not found (likely 404).
+        // This is our signal to enter graceful degradation mode.
+        console.warn(`Campground metadata for ID ${campgroundId} not found. Assuming non-reservable site. Proceeding with public data only.`);
+        // As a fallback, create an IdCollection assuming the public facility ID is the same as the campground ID.
+        ids = new IdCollection(campgroundId);
+        ids.facilityId = campgroundId; // Critical assumption for recovery
     }
 
-
-    // Second-chance logic for RecArea ID if initial attempt failed
-    if (!ids.recAreaId && facilityDetails) {
-        const fallbackRecAreaId = facilityDetails.ParentRecAreaID || (facilityDetails.RECAREA && facilityDetails.RECAREA[0]?.RecAreaID);
-        if (fallbackRecAreaId) {
-            console.log(`[fetchAllData] Metadata did not provide RecAreaID. Found fallback in facilityDetails: ${fallbackRecAreaId}.`);
-            ids.recAreaId = fallbackRecAreaId;
-            ids.eventInfoStatus = 'ID_FOUND_FALLBACK';
-            // Re-fetch with the new ID
-            const [newEvents, newMedia, newDetails] = await Promise.all([
-                fetchRecAreaEvents(ids, debugInfo),
-                fetchRecAreaMedia(ids, debugInfo),
-                fetchRecAreaDetails(ids, debugInfo)
-            ]);
-            eventsData = newEvents;
-            recAreaMedia = newMedia;
-            recAreaDetails = newDetails;
-        }
+    // If we couldn't determine an ID collection, we cannot proceed.
+    if (!ids) {
+        throw new Error(`Could not determine an ID collection for campground ${campgroundId}. Cannot fetch details.`);
     }
 
-    // --- Step 5: Assemble the final data object in the format the application expects ---
-    const finalDataObject = {
+    // 2. Fetch availability data ONLY if the site is reservable (i.e., metadata was found).
+    if (campgroundMetadata) {
+        availabilityResult = await fetchAvailabilityData(config, debugInfo);
+    }
+
+    // 3. Fetch public details from RIDB and Rec.gov, which should work even for non-reservable sites.
+    const [facilityDetails, recGovSearchData] = await Promise.all([
+        fetchFacilityDetails(ids, debugInfo),
+        fetchRecGovSearchData(ids, debugInfo)
+    ]);
+
+    // Update the recAreaId in our collection from the fetched facility details.
+    if (facilityDetails?.ParentRecAreaID) ids.recAreaId = facilityDetails.ParentRecAreaID;
+
+    // 4. Fetch additional details if a RecArea ID exists.
+    let recAreaDetails = null;
+    let recAreaEvents = null;
+    let recAreaMedia = null;
+    if (ids.recAreaId) {
+        [recAreaDetails, recAreaEvents, recAreaMedia] = await Promise.all([fetchRecAreaDetails(ids, debugInfo), fetchRecAreaEvents(ids, debugInfo), fetchRecAreaMedia(ids, debugInfo)]);
+    }
+
+    return {
         campgroundMetadata,
+        availabilityResult,
         facilityDetails,
         recAreaDetails,
-        eventsData: eventsData ? eventsData.RECDATA : null,
-        recAreaMedia: recAreaMedia ? recAreaMedia.RECDATA : null,
-        recGovSearchData, // The raw search data object. The UI will extract the first result.
-        combinedCampsites: availabilityData ? availabilityData.campsites : {},
-        response: availabilityData ? availabilityData.response : { headers: new Headers() },
-        requestDateTime: availabilityData ? availabilityData.requestDateTime : new Date(),
-        ids
+        recAreaEvents,
+        recAreaMedia,
+        recGovSearchData,
+        ids,
     };
-
-    console.log('%c[fetchAllData] Final data object being returned to UI:', 'color: green; font-weight: bold;', finalDataObject);
-
-    return finalDataObject;
 }

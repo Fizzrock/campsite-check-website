@@ -611,8 +611,15 @@ function initializeFacilitySearch() {
             button.dataset.facilityId = cg.FacilityID;
 
             let parentOrgName = cg.ORGANIZATION?.[0]?.OrgName ? `(${cg.ORGANIZATION[0].OrgName})` : '';
-            button.innerHTML = `<strong>${cg.FacilityName} (${cg.FacilityID})</strong> <span class="facility-parent-org">${parentOrgName}</span>`;
-            
+            let innerHTML = `<strong>${cg.FacilityName} (${cg.FacilityID})</strong> <span class="facility-parent-org">${parentOrgName}</span>`;
+
+            // Add a visual indicator for non-reservable sites, but keep them clickable.
+            if (!cg.Reservable) {
+                button.classList.add('non-reservable-result'); // For specific styling
+                innerHTML += `<br><span class="non-reservable-note">(First-Come, First-Served - Click to view details)</span>`;
+            }
+
+            button.innerHTML = innerHTML;
             li.appendChild(button);
             ul.appendChild(li);
         });
@@ -1234,14 +1241,16 @@ async function renderAllOutputs(allData, config) {
         eventsData,
         recGovSearchData,
         recAreaMedia,
-        combinedCampsites,
-        response,
-        requestDateTime,
+        availabilityResult,
         ids
     } = allData;
 
-    const finalAvailabilityData = { campsites: combinedCampsites };
+    // Gracefully handle the case where availability data was not fetched (e.g., for non-reservable sites)
+    const combinedCampsites = availabilityResult?.campsites || null;
+    const response = availabilityResult?.response || null;
+    const requestDateTime = availabilityResult?.requestDateTime || new Date(); // Fallback to now if not present
 
+    const finalAvailabilityData = { campsites: combinedCampsites };
     // Calculate and store the full, unfiltered summary for debugging.
     debugInfo.processing.fullAvailabilitySummary = calculateFullAvailabilitySummary(combinedCampsites);
 
@@ -2230,6 +2239,12 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
         ? `Filtered Sites (${siteNumbersToFilterArray.length} sites)`
         : 'All Sites';
 
+    // Determine the most appropriate message to show if no data rows are rendered.
+    let noDataMessage = "No campsites found matching the specified filters and date range.";
+    if (filteredRowsData.length === 0 && !campgroundMetadata) {
+        noDataMessage = "No availability data could be loaded. This usually means the campground is not reservable online (e.g., it is first-come, first-served).";
+    }
+
     await renderTabularDataInNewTab({
         tabTitle: tabTitle,
         pageTitle: pageTitle,
@@ -2241,7 +2256,7 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
         requestDateTime: requestDateTime,
         response: response,
         sortDescription: sortDescription,
-        noDataMessage: "No campsites found matching the specified filters and date range.",
+        noDataMessage: noDataMessage,
         rowBuilder: rowBuilder,
         postRenderCallback: postRenderCallback,
         isTableCollapsible: isFilteringBySiteNumber
@@ -3722,6 +3737,18 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         debugInfo.rendering.mainPageRenderStatus.activities = 'METADATA_OBJECT_MISSING';
         debugInfo.rendering.mainPageRenderStatus.addresses = 'METADATA_OBJECT_MISSING';
         debugInfo.rendering.mainPageRenderStatus.otherMetadata = 'METADATA_OBJECT_MISSING';
+
+        // Render a prominent warning message to the user.
+        const warningDiv = document.createElement('div');
+        warningDiv.className = 'notices-section'; // Reuse existing style for consistency
+        warningDiv.style.marginTop = '20px';
+        warningDiv.style.marginBottom = '20px';
+
+        addInfoElement(document, warningDiv, 'h3', 'Booking Information Not Available');
+        const p = addInfoElement(document, warningDiv, 'p', '');
+        if (p) p.innerHTML = 'This site was found in the public database, but its detailed booking information (like reservation rules, fees, and real-time availability) could not be loaded. This usually means the campground is <strong>not reservable online</strong> (e.g., it is first-come, first-served).';
+
+        containerElement.prepend(warningDiv);
     }
 
     const summaryElement = document.createElement("div");
@@ -3788,7 +3815,29 @@ function handleFetchError(error, containerElement) {
     });
 
     if (typeof document !== 'undefined' && containerElement) {
-        containerElement.textContent = "Error fetching or parsing data. Check console for details.";
+        // This is a non-destructive way to show an error. Instead of wiping out the
+        // entire container, we create a new tab to display the error message,
+        // preserving the main page's HTML structure for subsequent runs.
+        const tabButtonsContainer = document.getElementById('tab-buttons');
+        const tabPanelsContainer = document.getElementById('tab-panels'); // This is the same as containerElement
+
+        // Clear any previous tabs from a successful run before showing the error.
+        if (tabButtonsContainer) tabButtonsContainer.innerHTML = '';
+        if (tabPanelsContainer) tabPanelsContainer.innerHTML = '';
+
+        // Create a new tab specifically for the error message.
+        const errorPanel = createInPageTab('Error');
+        if (errorPanel) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'notices-section'; // Reuse a nice style
+            errorDiv.style.marginTop = '20px';
+
+            addInfoElement(document, errorDiv, 'h3', 'An Error Occurred');
+            const p = addInfoElement(document, errorDiv, 'p', '');
+            if (p) p.innerHTML = `The availability check could not be completed. Please check the console for technical details. <br><br><strong>Common Causes:</strong><ul><li>Invalid or non-reservable Campground ID.</li><li>A temporary network issue.</li></ul>`;
+
+            errorPanel.appendChild(errorDiv);
+        }
     } else {
         console.log("Skipping DOM error display as 'document' is not available or container not found.");
     }
