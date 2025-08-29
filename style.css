@@ -502,13 +502,11 @@ button[data-campsite-id]:hover {
 
 /* --- API Status Badge --- */
 .api-status-badge {
-    font-size: 0.7em;
+    font-size: 0.8rem; /* Use rem for consistent sizing regardless of parent */
     padding: 0.2em 0.6em;
     border-radius: 10px;
     font-weight: bold;
     color: white;
-    margin-left: 10px;
-    vertical-align: middle;
 }
 .api-status-badge.ok {
     background-color: #28a745; /* green */

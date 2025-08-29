@@ -1152,13 +1152,24 @@ async function renderTabularDataInNewTab(options) {
 
     if (pageTitle) { // Only add H1 if a title is provided
         const h1 = addInfoElement(document, panel, 'h1', pageTitle);
+
         // Add a placeholder for the API status badge
         if (h1) {
+            // Reduce the default bottom margin of the h1 to close the gap.
+            h1.style.marginBottom = '0.25em';
+
+            // Create a container for the badge to ensure it's a block-level element
+            // and to control its margin.
+            const badgeContainer = document.createElement('div');
+            badgeContainer.style.marginBottom = '1em'; // Space below the badge.
+
             const badge = document.createElement('span');
             badge.className = 'api-status-badge';
             badge.style.display = 'none'; // Initially hidden
-            // Insert the badge *after* the h1, not inside it, to keep font size consistent.
-            h1.insertAdjacentElement('afterend', badge);
+            badgeContainer.appendChild(badge);
+
+            // Insert the badge container immediately after the h1 element.
+            h1.insertAdjacentElement('afterend', badgeContainer);
         }
     }
 
@@ -1806,8 +1817,8 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
                     // Create the summary button
                     const summaryButton = doc.createElement('button');
                     summaryButton.className = 'collapsible-summary';
-                    const baseButtonText = `Site: ${campsiteDetails.CampsiteName}`;
-                    summaryButton.textContent = `${baseButtonText}${compactSummaryText}`;
+                    const baseButtonText = `Site: ${campsiteDetails.CampsiteName}`;                    
+                    summaryButton.innerHTML = `<strong>${baseButtonText}</strong>${compactSummaryText}`;
                     summaryButton.title = `${baseButtonText}\n${tooltipText}`;
                     containerDiv.appendChild(summaryButton);
 
@@ -1822,22 +1833,6 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
                     console.warn("[displayFilteredSitesInNewTab] Failed to fetch or no data for a campsite detail:", result.reason || "No data returned");
                 }
             });
-
-            // Add the single event listener for all collapsible sections
-            containerDiv.addEventListener('click', (event) => {
-                if (event.target.classList.contains('collapsible-summary')) {
-                    const button = event.target;
-                    button.classList.toggle('active');
-                    const content = button.nextElementSibling;
-                    if (content) {
-                        if (content.style.display === 'block') {
-                            content.style.display = 'none';
-                        } else {
-                            content.style.display = 'block';
-                        }
-                    }
-                }
-            });
         } else {
             logDebug(`Site filter is empty. Details will be lazy-loaded on demand.`);
             const detailButtons = containerDiv.querySelectorAll('button[data-campsite-id]');
@@ -1846,6 +1841,25 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
             });
             logDebug(`Attached 'Show Details' listeners to ${detailButtons.length} buttons.`);
         }
+
+        // Add a single, delegated event listener for all collapsible sections in this tab.
+        // This handles both the summary accordions (which always appear) and the
+        // per-site accordions (which appear when filtering by site number).
+        containerDiv.addEventListener('click', (event) => {
+            if (event.target.classList.contains('collapsible-summary')) {
+                const button = event.target;
+                button.classList.toggle('active');
+                const content = button.nextElementSibling;
+                if (content) {
+                    // Simple toggle for display
+                    if (content.style.display === 'block') {
+                        content.style.display = 'none';
+                    } else {
+                        content.style.display = 'block';
+                    }
+                }
+            }
+        });
 
         // --- Add the overall availability summary at the bottom ---
         const separator = doc.createElement('hr');
@@ -1878,91 +1892,70 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
             row => row.availability === AVAILABILITY_STATUS.OPEN
         );
 
-        // 2. Render the "Available" summary box, if applicable
-        if (availableRows.length > 0) {
-            const summaryDiv = doc.createElement('div');
-            summaryDiv.className = 'availability-summary-main';
-            addInfoElement(doc, summaryDiv, 'h3', 'Available Summary for Filtered Sites');
-            summaryDiv.style.backgroundColor = '#e6ffed'; // A light green for success
-            summaryDiv.style.border = '1px solid #28a745';
+        /**
+         * Helper function to create a collapsible accordion summary for a given set of data.
+         * @param {string} title - The title for the accordion button.
+         * @param {Array<object>} rows - The data rows to summarize.
+         * @param {object} style - CSS styles for the button.
+         */
+        const createSummaryAccordion = (title, rows, style) => {
+            if (!rows || rows.length === 0) return;
 
-            const availableBySite = availableRows.reduce((acc, row) => {
-                if (!acc[row.site]) {
-                    acc[row.site] = [];
-                }
+            const dataBySite = rows.reduce((acc, row) => {
+                if (!acc[row.site]) acc[row.site] = [];
                 acc[row.site].push(row.date);
                 return acc;
             }, {});
 
+            const siteCount = Object.keys(dataBySite).length;
+
+            // Create the accordion button
+            const summaryButton = doc.createElement('button');
+            summaryButton.className = 'collapsible-summary';
+            summaryButton.innerHTML = `<strong>${title}</strong> (${siteCount} site${siteCount !== 1 ? 's' : ''})`;
+            if (style.backgroundColor) summaryButton.style.backgroundColor = style.backgroundColor;
+            if (style.border) summaryButton.style.border = style.border;
+            if (style.marginTop) summaryButton.style.marginTop = style.marginTop;
+
+            // Create the details panel
+            const detailsPanel = doc.createElement('div');
+            detailsPanel.className = 'collapsible-details';
+            if (style.backgroundColor) {
+                detailsPanel.style.backgroundColor = style.backgroundColor;
+            }
+
             const summaryList = doc.createElement('ul');
             summaryList.style.paddingLeft = '20px';
-            Object.keys(availableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
-                const dates = availableBySite[site].join(', ');
+            Object.keys(dataBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
+                const dates = dataBySite[site].join(', ');
                 const li = doc.createElement('li');
                 li.innerHTML = `<strong>${site}:</strong> ${dates}`;
                 summaryList.appendChild(li);
             });
-            summaryDiv.appendChild(summaryList);
-            containerDiv.appendChild(summaryDiv);
-        }
+            detailsPanel.appendChild(summaryList);
 
-        // 3. Render the "Not Reservable" summary box, if applicable
-        if (notReservableRows.length > 0) {
-            const summaryDiv = doc.createElement('div');
-            summaryDiv.className = 'availability-summary-main';
-            addInfoElement(doc, summaryDiv, 'h3', 'Walk-up (FCFS) Summary');
-            summaryDiv.style.backgroundColor = '#fffbe6'; // Light yellow
-            summaryDiv.style.border = '1px solid #ffeeba'; // Yellow border
-            summaryDiv.style.marginTop = '10px'; // Add space between summaries
+            containerDiv.appendChild(summaryButton);
+            containerDiv.appendChild(detailsPanel);
+        };
 
-            const notReservableBySite = notReservableRows.reduce((acc, row) => {
-                if (!acc[row.site]) {
-                    acc[row.site] = [];
-                }
-                acc[row.site].push(row.date);
-                return acc;
-            }, {});
+        // 2. Render the summaries using the new accordion helper
+        createSummaryAccordion(
+            'Available Summary',
+            availableRows,
+            { backgroundColor: '#e6ffed', border: '1px solid #28a745' }
+        );
 
-            const summaryList = doc.createElement('ul');
-            summaryList.style.paddingLeft = '20px';
-            Object.keys(notReservableBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
-                const dates = notReservableBySite[site].join(', ');
-                const li = doc.createElement('li');
-                li.innerHTML = `<strong>${site}:</strong> ${dates}`;
-                summaryList.appendChild(li);
-            });
-            summaryDiv.appendChild(summaryList);
-            containerDiv.appendChild(summaryDiv);
-        }
+        createSummaryAccordion(
+            'Walk-up (FCFS) Summary',
+            notReservableRows,
+            { backgroundColor: '#fffbe6', border: '1px solid #e0c983ff', marginTop: '10px' }
+        );
 
-        // 4. Render the "Open for Continuation" summary box, if applicable
-        if (openRows.length > 0) {
-            const summaryDiv = doc.createElement('div');
-            summaryDiv.className = 'availability-summary-main';
-            addInfoElement(doc, summaryDiv, 'h3', 'Open for Continuation On (Extend Only)');
-            summaryDiv.style.backgroundColor = '#e7f3ff'; // Light blue
-            summaryDiv.style.border = '1px solid #4a90e2'; // Blue border
-            summaryDiv.style.marginTop = '10px';
-
-            const openBySite = openRows.reduce((acc, row) => {
-                if (!acc[row.site]) {
-                    acc[row.site] = [];
-                }
-                acc[row.site].push(row.date);
-                return acc;
-            }, {});
-
-            const summaryList = doc.createElement('ul');
-            summaryList.style.paddingLeft = '20px';
-            Object.keys(openBySite).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(site => {
-                const dates = openBySite[site].join(', ');
-                const li = doc.createElement('li');
-                li.innerHTML = `<strong>${site}:</strong> ${dates}`;
-                summaryList.appendChild(li);
-            });
-            summaryDiv.appendChild(summaryList);
-            containerDiv.appendChild(summaryDiv);
-        }
+        createSummaryAccordion(
+            'Open for Continuation (Extend Only)',
+            openRows,
+            { backgroundColor: '#e7f3ff', border: '1px solid #4a90e2', marginTop: '10px' }
+        );
 
         // --- Create main filter description header ---
         const siteFilterText = isFilteringBySiteNumber ? `Displaying sites: ${siteNumbersToFilterArray.join(", ")}` : `Displaying all sites`;
@@ -1975,7 +1968,11 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
         containerDiv.appendChild(filterDescriptionHeader);
     };
 
-    const pageTitle = `Filtered Campsite Availability - ${campgroundMetadata?.facility_name || config.api.campgroundId}`;
+    const cleanFacilityName = campgroundMetadata?.facility_name?.split('(')[0].trim() || config.api.campgroundId;
+
+    const pageTitle = isFilteringBySiteNumber
+        ? `Filtered Campsite Availability - ${cleanFacilityName}`
+        : `All Campsite Availability - ${cleanFacilityName}`;
     const sortDescription = config.sorting.primarySortKey === 'site' ? "Data sorted by Site, then by Date." : "Data sorted by Date, then by Site.";
     const tabTitle = isFilteringBySiteNumber
         ? `Filtered Sites (${siteNumbersToFilterArray.length} sites)`
@@ -3311,15 +3308,6 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
     const searchResult = recGovSearchData?.results?.[0] || null;
     const mainPageRenderStatus = debugInfo.rendering.mainPageRenderStatus;
 
-    // Centralized badge creation (always create the badge element)
-    const badgePlaceholder = document.createElement('div');
-    badgePlaceholder.style.textAlign = 'left';
-    badgePlaceholder.style.marginBottom = '10px';
-    const badge = document.createElement('span');
-    badge.className = 'api-status-badge';
-    badge.style.display = 'none'; // Initially hidden
-    badgePlaceholder.appendChild(badge);
-
     debugInfo.rendering.mainPageRenderStatus.facilityDetails = !!facilityDetails;
     debugInfo.rendering.mainPageRenderStatus.recAreaDetails = !!recAreaDetails;
     debugInfo.rendering.mainPageRenderStatus.events = ids.eventInfoStatus;
@@ -3339,17 +3327,23 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         detailsContainer.style.fontSize = "1.1rem";
         containerElement.appendChild(detailsContainer);
 
-        // Insert the API status badge placeholder after the main H1 title
-        // The H1 is created by renderFacilityHeaderAndDetails
         // Render the main header, facility details, and rec area details into their container.
         renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, searchResult, ids);
         const h1 = detailsContainer.querySelector('h1');
-        if (h1) h1.parentNode.insertBefore(badgePlaceholder, h1.nextSibling);
 
-        const ratingsSection = detailsContainer.querySelector('.ratings-section');
-        if (ratingsSection) {
-            // The badge is now inserted after the H1, so this specific insertion logic is no longer needed.
-            // The ratings section will appear after the badge.
+        // Insert the API status badge with the correct layout
+        if (h1) {
+            h1.style.marginBottom = '0.25em';
+
+            const badgeContainer = document.createElement('div');
+            badgeContainer.style.marginBottom = '1em';
+
+            const badge = document.createElement('span');
+            badge.className = 'api-status-badge';
+            badge.style.display = 'none';
+            badgeContainer.appendChild(badge);
+
+            h1.insertAdjacentElement('afterend', badgeContainer);
         }
 
         // Render primary image from search data, if available
@@ -3375,9 +3369,21 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         fallbackDiv.className = 'facility-details';
         addInfoElement(document, fallbackDiv, 'h1', `Details for Campground ID: ${ids.campgroundId}`);
 
-        // Insert the API status badge placeholder after the main H1 title in fallback
+        // Insert the API status badge with the correct layout in the fallback view
         const h1 = fallbackDiv.querySelector('h1');
-        if (h1) h1.parentNode.insertBefore(badgePlaceholder, h1.nextSibling);
+        if (h1) {
+            h1.style.marginBottom = '0.25em';
+
+            const badgeContainer = document.createElement('div');
+            badgeContainer.style.marginBottom = '1em';
+
+            const badge = document.createElement('span');
+            badge.className = 'api-status-badge';
+            badge.style.display = 'none';
+            badgeContainer.appendChild(badge);
+
+            h1.insertAdjacentElement('afterend', badgeContainer);
+        }
 
         const idsDiv = document.createElement('div');
         idsDiv.className = 'id-display-section';
