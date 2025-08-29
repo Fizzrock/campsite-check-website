@@ -657,6 +657,35 @@ function initializeFacilitySearch() {
 }
 
 /**
+ * Initializes the "Back to Top" button, handling its visibility
+ * on scroll and the click event to scroll the page up.
+ */
+function initializeBackToTopButton() {
+    const backToTopBtn = document.getElementById('back-to-top-btn');
+    if (!backToTopBtn) {
+        console.warn('Back to top button not found. Feature will be disabled.');
+        return;
+    }
+
+    const scrollThreshold = 300; // Show button after scrolling 300px
+
+    const toggleVisibility = () => {
+        if (window.scrollY > scrollThreshold) {
+            backToTopBtn.classList.add('visible');
+        } else {
+            backToTopBtn.classList.remove('visible');
+        }
+    };
+
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.addEventListener('scroll', toggleVisibility);
+    backToTopBtn.addEventListener('click', scrollToTop);
+}
+
+/**
  * Injects the necessary CSS for the lightbox into the document's head.
  * This function ensures that the styles are available in any document (main page or new tab)
  * where the lightbox is used. It creates a <style> element and appends it.
@@ -4302,6 +4331,9 @@ async function initializePage() {
 
     // Initialize the new facility search feature
     initializeFacilitySearch();
+
+    // Initialize the "Back to Top" button functionality
+    initializeBackToTopButton();
     
     console.log("Page initialized. Ready for user input.");
 }
