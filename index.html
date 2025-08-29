@@ -21,14 +21,16 @@
         </h2>
         <div class="accordion-content">
             <div class="instructions" style="margin-top: 1em;">
-                <p>Use this search to find a campground's ID. Once you select a result, the ID will be filled in below.</p>
+                <p>Enter a search term and select a state to find a campground's ID. If you can't find a known campground, try selecting 'ALL STATES' as some locations may not be tagged correctly in the database. Click a result to use its ID.</p>
             </div>
             <div id="facility-search-form">
                 <label for="facility-query">Search Term:</label>
                 <input type="text" id="facility-query" placeholder="e.g., Rock Creek">
 
                 <label for="facility-state">State:</label>
-                <select id="facility-state"></select>
+                <select id="facility-state">
+                    <option value="">ALL STATES</option>
+                </select>
 
                 <button type="button" id="facility-search-btn">Find</button>
             </div>

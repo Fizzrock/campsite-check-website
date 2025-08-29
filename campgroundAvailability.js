@@ -562,7 +562,13 @@ function initializeFacilitySearch() {
         searchAccordionContent.style.maxHeight = searchAccordionContent.scrollHeight + "px";
 
         try {
-            const firstPageUrl = `/api/fetch-ridb?type=facilitySearch&query=${encodeURIComponent(query)}&state=${state}&limit=50&offset=0`;
+            // Build the base URL, conditionally adding the state parameter.
+            let searchUrlBase = `/api/fetch-ridb?type=facilitySearch&query=${encodeURIComponent(query)}&limit=50`;
+            if (state) { // Only add the state parameter if a state is selected
+                searchUrlBase += `&state=${state}`;
+            }
+
+            const firstPageUrl = `${searchUrlBase}&offset=0`;
             const response = await fetch(firstPageUrl);
             if (!response.ok) throw new Error(`API request failed with status: ${response.status}`);
             const firstPageData = await response.json();
@@ -578,7 +584,8 @@ function initializeFacilitySearch() {
                 const fetchPromises = [];
                 for (let i = 1; i < totalPages; i++) {
                     const offset = i * limit;
-                    const pageUrl = `/api/fetch-ridb?type=facilitySearch&query=${encodeURIComponent(query)}&state=${state}&limit=${limit}&offset=${offset}`;
+                    // Reuse the base URL for subsequent pages
+                    const pageUrl = `${searchUrlBase}&offset=${offset}`;
                     fetchPromises.push(fetch(pageUrl).then(res => res.json()));
                 }
 
