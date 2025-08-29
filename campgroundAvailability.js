@@ -3216,6 +3216,10 @@ function renderMainAvailabilityTable(parentElement, campsites, requestDateTime, 
 
     addRequestInfoElements(document, parentElement, requestDateTime, response);
 
+    // Display the date range info as a simple line of text before the table button.
+    const dateRangeText = getDateRangeDisplayText(config.filters.filterStartDate, config.filters.filterEndDate, config.filters.startDate);
+    addInfoElement(document, parentElement, 'p', '').innerHTML = dateRangeText;
+
     const rowsToSort = [];
     if (campsites && Object.keys(campsites).length > 0) {
         for (const cId in campsites) {
@@ -3467,18 +3471,6 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         debugInfo.rendering.mainPageRenderStatus.addresses = 'METADATA_OBJECT_MISSING';
         debugInfo.rendering.mainPageRenderStatus.otherMetadata = 'METADATA_OBJECT_MISSING';
     }
-
-    // --- Section 2: Render Date Range, Summary, and Loop Info ---
-    const dateRangeDiv = document.createElement('div');
-    dateRangeDiv.className = 'date-range-info';
-    dateRangeDiv.style.marginTop = '15px';
-    dateRangeDiv.style.padding = '10px';
-    dateRangeDiv.style.backgroundColor = '#e9e9e9';
-    dateRangeDiv.style.border = '1px solid #ccc';
-    dateRangeDiv.style.fontSize = "1.1rem";
-    const dateRangeText = getDateRangeDisplayText(config.filters.filterStartDate, config.filters.filterEndDate, config.filters.startDate);
-    addInfoElement(document, dateRangeDiv, 'p', '').innerHTML = dateRangeText;
-    containerElement.appendChild(dateRangeDiv);
 
     const summaryElement = document.createElement("div");
     summaryElement.className = 'availability-summary-main';
