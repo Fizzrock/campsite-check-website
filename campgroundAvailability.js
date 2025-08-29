@@ -533,7 +533,6 @@ function initializeFacilitySearch() {
         const option = document.createElement('option');
         option.value = state;
         option.textContent = state;
-        if (state === 'CA') option.selected = true;
         stateSelect.appendChild(option);
     });
 
