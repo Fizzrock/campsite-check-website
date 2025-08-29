@@ -311,41 +311,49 @@ config.siteFilters.siteNumbersToFilter = [...new Set(config.siteFilters.siteNumb
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); // Use natural sort for "A10" vs "A2"
 console.log("Sanitized siteNumbersToFilter:", config.siteFilters.siteNumbersToFilter);
 
+/**
+ * Creates a fresh, empty debug information object.
+ * @returns {object} A new debugInfo object with its initial structure.
+ */
+function createFreshDebugInfo() {
+    return {
+        timestamps: {
+            start: null,
+            configPrepared: null,
+            fetchStart: null,
+            fetchComplete: null,
+            renderStart: null,
+            renderComplete: null,
+            end: null
+        },
+        configuration: {
+            initial: null,
+            effective: null
+        },
+        api: {
+            summary: null,
+            monthsToFetch: [],
+            calls: [] // Each entry: { context, url, status, error?, timestamp }
+        },
+        processing: {
+            // Note: combinedCampsites can be large and is omitted to keep the debug object clean.
+            // It can be inspected via the "Raw JSON" tab if needed.
+            availabilityCounts: null, // Summary for the FILTERED date range
+            fullAvailabilitySummary: null, // Summary for the ENTIRE fetched data range
+            filteredSiteIdsForDetailFetch: []
+        },
+        rendering: {
+            tabsOpened: [],
+            mainPageRenderStatus: {} // e.g., { facilityDetails: true, events: 'ID_FOUND' }
+        },
+        errors: [] // Each entry: { context, message, stack? }
+    };
+}
+
 // --- Centralized Debugging Object ---
 // This object will be populated throughout the script's execution to provide a
 // single, structured source of debugging information.
-const debugInfo = {
-    timestamps: {
-        start: null,
-        configPrepared: null,
-        fetchStart: null,
-        fetchComplete: null,
-        renderStart: null,
-        renderComplete: null,
-        end: null
-    },
-    configuration: {
-        initial: null,
-        effective: null
-    },
-    api: {
-        summary: null,
-        monthsToFetch: [],
-        calls: [] // Each entry: { context, url, status, error?, timestamp }
-    },
-    processing: {
-        // Note: combinedCampsites can be large and is omitted to keep the debug object clean.
-        // It can be inspected via the "Raw JSON" tab if needed.
-        availabilityCounts: null, // Summary for the FILTERED date range
-        fullAvailabilitySummary: null, // Summary for the ENTIRE fetched data range
-        filteredSiteIdsForDetailFetch: []
-    },
-    rendering: {
-        tabsOpened: [],
-        mainPageRenderStatus: {} // e.g., { facilityDetails: true, events: 'ID_FOUND' }
-    },
-    errors: [] // Each entry: { context, message, stack? }
-};
+let debugInfo = createFreshDebugInfo();
 
 // --- Global state for cooldown timer ---
 let cooldownIntervalId = null;
@@ -3846,30 +3854,46 @@ function handleFetchError(error, containerElement) {
 /**
  * Generates a summary of API call outcomes.
  * @param {Array<object>} apiCalls - The array of API call log entries from `debugInfo.api.calls`.
- * @returns {{totalCalls: number, successfulCalls: number, failedCalls: number, failures: Array<object>}} - The summary object.
+ * @returns {{totalCalls: number, successfulCalls: number, knownFailureCount: number, unexpectedFailureCount: number, unexpectedFailures: Array<object>}} - The summary object.
  */
 function generateApiSummary(apiCalls) {
     const totalCalls = apiCalls.length;
     let successfulCalls = 0;
-    const failures = [];
+    let knownFailureCount = 0;
+    const unexpectedFailures = [];
 
     apiCalls.forEach(call => {
         if (call.status === 200) {
             successfulCalls++;
         } else {
-            failures.push({
-                context: call.context,
-                status: call.status,
-                error: call.error || 'No error message provided.'
-            });
+            // A "known failure" is a 404 for the campground metadata fetch, which we handle gracefully.
+            // We need to safely parse the context, which is a JSON string.
+            let contextType = '';
+            try {
+                contextType = JSON.parse(call.context || '{}').type;
+            } catch (e) {
+                // Not a structured context, treat as unexpected.
+            }
+
+            if (call.status === 404 && contextType === 'Campground Metadata') {
+                knownFailureCount++;
+            } else {
+                // Any other failure is unexpected.
+                unexpectedFailures.push({
+                    context: call.context,
+                    status: call.status,
+                    error: call.error || 'No error message provided.'
+                });
+            }
         }
     });
 
     return {
         totalCalls,
         successfulCalls,
-        failedCalls: totalCalls - successfulCalls,
-        failures
+        knownFailureCount,
+        unexpectedFailureCount: unexpectedFailures.length,
+        unexpectedFailures
     };
 }
 
@@ -3895,10 +3919,16 @@ function renderApiStatusBadge(summary) {
             return; // Don't show the badge if no API calls were made
         }
 
-        if (summary.failedCalls > 0) {
-            badge.textContent = `API: ${summary.failedCalls} Failed`;
+        // Highest priority: Show red for any unexpected failures.
+        if (summary.unexpectedFailureCount > 0) {
+            badge.textContent = `API: ${summary.unexpectedFailureCount} Failed`;
             badge.classList.add('failed');
+        } else if (summary.knownFailureCount > 0) {
+            // Next priority: Show orange for known, handled failures.
+            badge.textContent = 'API: Partial Data';
+            badge.classList.add('warning');
         } else {
+            // Default: Show green if all calls were successful.
             badge.textContent = 'API: OK';
             badge.classList.add('ok');
         }
@@ -4076,6 +4106,9 @@ async function handleFormSubmit(event) {
     }
 
     try {
+        // Reset the global debug object for the new run to prevent old data from interfering.
+        debugInfo = createFreshDebugInfo();
+
         submitButton.disabled = true;
         submitButton.textContent = 'Loading...';
 

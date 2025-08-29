@@ -635,6 +635,9 @@ button[data-campsite-id]:hover {
 .api-status-badge.failed {
     background-color: #dc3545; /* red */
 }
+.api-status-badge.warning {
+    background-color: #ffc107; /* orange/yellow */
+}
 
 /* --- Animation for Row Highlighting --- */
 @keyframes pulse-highlight {
