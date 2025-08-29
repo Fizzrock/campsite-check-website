@@ -634,8 +634,12 @@ function initializeFacilitySearch() {
             campgroundNameDisplay.style.display = 'block';
         }
 
-        // After showing the name, update the config accordion's height if it's open
-        if (configAccordionHeader.classList.contains('active')) {
+        // Ensure the config accordion is open and has the correct height.
+        if (!configAccordionHeader.classList.contains('active')) {
+            // If it's closed, click to open it. The click handler will set the height.
+            configAccordionHeader.click();
+        } else {
+            // If it's already open, just update its height to fit the new text.
             configAccordionContent.style.maxHeight = configAccordionContent.scrollHeight + "px";
         }
 

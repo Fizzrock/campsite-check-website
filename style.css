@@ -25,8 +25,6 @@ body {
 }
 
 .instructions {
-    background-color: #eef7ff;
-    border: 1px solid #b3d7f7;
     border-radius: 8px;
     padding: 10px 20px;
     margin-bottom: 20px;
@@ -39,6 +37,18 @@ body {
 .instructions ol {
     padding-left: 20px;
     margin-bottom: 0;
+}
+
+/* Style instructions to match their accordion header */
+#facility-search-accordion-container .instructions {
+    background-color: #e9f5ff; /* Match blue header */
+    border: 1px solid #cce7ff; /* Lighter blue border */
+}
+
+/* Future-proofing for instructions in the config section */
+#config-accordion-container .instructions {
+    background-color: #f1fff9; /* Match green header */
+    border: 1px solid #a6d5c0; /* Lighter green border */
 }
 
 form {
@@ -80,11 +90,11 @@ form {
 
 /* Different color for the facility search to distinguish it */
 #facility-search-accordion-container .accordion-header {
-    background-color: #e9f5ff; /* A light, friendly blue */
+    background-color: #d2eaff; /* A light, friendly blue */
 }
 
 #facility-search-accordion-container .accordion-header:hover {
-    background-color: #cce7ff;
+    background-color: #add9ff;
 }
 
 .accordion-header .toggle-icon {
@@ -662,12 +672,13 @@ button[data-campsite-id]:hover {
 }
 
 #back-to-top-btn.visible {
-    opacity: 1;
+    opacity: 0.7; /* Make it semi-transparent */
     visibility: visible;
 }
 
 #back-to-top-btn:hover {
     background-color: #333;
+    opacity: 1; /* Make it fully opaque on hover */
 }
 
 /* ==========================================================================
