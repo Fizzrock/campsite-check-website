@@ -2276,56 +2276,6 @@ async function displayFilteredSitesInNewTab(allCampsitesData, availabilityCounts
 }
 
 /**
- * Renders the user ratings section with stars.
- * @param {HTMLElement} parentElement The parent element to append the ratings to.
- * @param {object} searchResult The result object from the rec.gov search API.
- */
-function renderUserRatings(parentElement, searchResult) {
-    if (!searchResult || typeof searchResult.average_rating !== 'number' || typeof searchResult.number_of_ratings !== 'number') {
-        return;
-    }
-
-    const doc = parentElement.ownerDocument;
-    const ratingsContainer = doc.createElement('div');
-    ratingsContainer.className = 'ratings-section';
-    ratingsContainer.style.display = 'flex';
-    ratingsContainer.style.alignItems = 'center';
-    ratingsContainer.style.marginBottom = '10px';
-
-    const averageRating = parseFloat(searchResult.average_rating).toFixed(1);
-    const numRatings = searchResult.number_of_ratings;
-
-    // Create stars
-    const starsContainer = doc.createElement('div');
-    starsContainer.className = 'stars';
-    const fullStars = Math.round(searchResult.average_rating);
-    for (let i = 0; i < 5; i++) {
-        const star = doc.createElement('span');
-        star.innerHTML = i < fullStars ? '&#9733;' : '&#9734;'; // filled or empty star
-        star.style.color = '#f5b301'; // gold color
-        star.style.fontSize = '20px';
-        starsContainer.appendChild(star);
-    }
-
-    const ratingsText = doc.createElement('span');
-    ratingsText.textContent = ` ${averageRating} out of 5 (${numRatings} ratings)`;
-    ratingsText.style.marginLeft = '10px';
-    ratingsText.style.verticalAlign = 'middle';
-    ratingsText.style.fontSize = '0.9em';
-
-    ratingsContainer.appendChild(starsContainer);
-    ratingsContainer.appendChild(ratingsText);
-
-    // Insert after the main h1 title
-    const h1 = parentElement.querySelector('h1');
-    if (h1 && h1.nextSibling) {
-        parentElement.insertBefore(ratingsContainer, h1.nextSibling);
-    } else {
-        parentElement.appendChild(ratingsContainer);
-    }
-}
-
-/**
  * Determines a color based on a cell coverage score.
  * @param {number} score The score from 0 to 10.
  * @returns {string} A hex color code.
@@ -2338,103 +2288,6 @@ function getCellScoreColor(score) {
         return '#ffc107'; // Orange/Yellow
     }
     return '#dc3545'; // Red
-}
-
-/**
- * Renders at-a-glance information like site count and types.
- * @param {HTMLElement} parentElement The parent element to append the info to.
- * @param {object} searchResult The result object from the rec.gov search API.
- */
-function renderAtAGlanceInfo(parentElement, searchResult) {
-    if (!searchResult) return;
-
-    const siteInfoParts = [];
-    if (searchResult.campsites_count) {
-        // The API returns this as a string, which is fine.
-        siteInfoParts.push(`<strong>${searchResult.campsites_count}</strong> sites`);
-    }
-    if (searchResult.campsite_reserve_type && searchResult.campsite_reserve_type.length > 0) {
-        // e.g., (Site-Specific)
-        siteInfoParts.push(`(${searchResult.campsite_reserve_type.join(', ')})`);
-    }
-    if (searchResult.campsite_equipment_name && searchResult.campsite_equipment_name.length > 0) {
-        // e.g., for Tent, RV
-        siteInfoParts.push(`for ${searchResult.campsite_equipment_name.join(', ')}`);
-    }
-
-    const hasSiteInfo = siteInfoParts.length > 0;
-    const hasCellInfo = typeof searchResult.aggregate_cell_coverage === 'number';
-    const hasPriceInfo = searchResult.price_range &&
-        typeof searchResult.price_range.amount_min === 'number' &&
-        typeof searchResult.price_range.amount_max === 'number';
-
-
-    if (!hasSiteInfo && !hasCellInfo && !hasPriceInfo) return;
-
-    const doc = parentElement.ownerDocument;
-    const glanceContainer = doc.createElement('div');
-    glanceContainer.className = 'glance-info-section';
-    glanceContainer.style.marginBottom = '15px';
-    glanceContainer.style.fontSize = '1.1em';
-    glanceContainer.style.color = '#333';
-    glanceContainer.style.padding = '10px';
-    glanceContainer.style.backgroundColor = '#f8f9fa';
-    glanceContainer.style.border = '1px solid #dee2e6';
-    glanceContainer.style.borderRadius = '4px';
-
-    if (hasSiteInfo) {
-        const p = doc.createElement('p');
-        p.style.margin = '0';
-        p.innerHTML = siteInfoParts.join(' ');
-        glanceContainer.appendChild(p);
-    }
-
-    if (hasCellInfo) {
-        const coverage = searchResult.aggregate_cell_coverage;
-        const score = Math.round(coverage * 10);
-        const color = getCellScoreColor(score);
-
-        const wrapper = doc.createElement('div');
-        wrapper.style.display = 'flex';
-        wrapper.style.alignItems = 'center';
-        wrapper.style.margin = hasSiteInfo ? '8px 0 0 0' : '0';
-
-        const icon = doc.createElement('div');
-        icon.style.width = '1em';
-        icon.style.height = '1em';
-        icon.style.marginRight = '8px';
-        icon.style.backgroundColor = color;
-        icon.style.webkitMask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
-        icon.style.mask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
-        icon.style.webkitMaskSize = 'contain';
-        icon.style.maskSize = 'contain';
-
-        const textSpan = doc.createElement('span');
-        textSpan.innerHTML = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${coverage.toFixed(4)})`;
-
-        wrapper.appendChild(icon);
-        wrapper.appendChild(textSpan);
-        glanceContainer.appendChild(wrapper);
-    }
-
-    if (hasPriceInfo) {
-        const { amount_min, amount_max, per_unit } = searchResult.price_range;
-        let priceText;
-        if (amount_min === amount_max) {
-            priceText = `$${amount_min.toFixed(2)}`;
-        } else {
-            priceText = `$${amount_min.toFixed(2)} - $${amount_max.toFixed(2)}`;
-        }
-        if (per_unit) {
-            priceText += ` per ${per_unit}`;
-        }
-        const p = addInfoElement(doc, glanceContainer, 'p', '');
-        p.style.margin = (hasSiteInfo || hasCellInfo) ? '8px 0 0 0' : '0';
-        p.innerHTML = `<strong>Price:</strong> ${priceText}`;
-    }
-
-    const ratingsSection = parentElement.querySelector('.ratings-section');
-    parentElement.insertBefore(glanceContainer, ratingsSection.nextSibling);
 }
 
 /**
@@ -2966,53 +2819,25 @@ function startCooldown(button) {
  * @param {IdCollection} ids The collection of IDs for the campground.
  */
 function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaDetails, searchResult, ids, campgroundMetadata) {
-    addInfoElement(document, parentElement, 'h1', facilityDetails.FacilityName || `Details for Campground ID: ${ids.campgroundId}`);
+    const titleBlock = document.createElement('div');
+    titleBlock.className = 'facility-title-block';
+    parentElement.appendChild(titleBlock);
+
+    addInfoElement(document, titleBlock, 'h1', facilityDetails.FacilityName || `Details for Campground ID: ${ids.campgroundId}`);
 
     // Add City, State subheader right below the main title
     if (campgroundMetadata?.city && campgroundMetadata?.state) {
         const locationText = `${campgroundMetadata.city}, ${campgroundMetadata.state}`;
-        const p = addInfoElement(document, parentElement, 'p', locationText);
+        const p = addInfoElement(document, titleBlock, 'p', locationText);
         if (p) {
             p.className = 'facility-subheader';
         }
     }
 
     if (searchResult) {
-        // --- Render User Ratings (Consolidated) ---
-        if (typeof searchResult.average_rating === 'number' && typeof searchResult.number_of_ratings === 'number') {
-            const doc = parentElement.ownerDocument;
-            const ratingsContainer = doc.createElement('div');
-            ratingsContainer.className = 'ratings-section';
-            ratingsContainer.style.display = 'flex';
-            ratingsContainer.style.alignItems = 'center';
-            ratingsContainer.style.marginBottom = '10px';
+        const doc = parentElement.ownerDocument;
+        const hasRatings = typeof searchResult.average_rating === 'number' && typeof searchResult.number_of_ratings === 'number';
 
-            const averageRating = parseFloat(searchResult.average_rating).toFixed(1);
-            const numRatings = searchResult.number_of_ratings;
-
-            const starsContainer = doc.createElement('div');
-            starsContainer.className = 'stars';
-            const fullStars = Math.round(searchResult.average_rating);
-            for (let i = 0; i < 5; i++) {
-                const star = doc.createElement('span');
-                star.innerHTML = i < fullStars ? '&#9733;' : '&#9734;';
-                star.style.color = '#f5b301';
-                star.style.fontSize = '20px';
-                starsContainer.appendChild(star);
-            }
-
-            const ratingsText = doc.createElement('span');
-            ratingsText.textContent = ` ${averageRating} out of 5 (${numRatings} ratings)`;
-            ratingsText.style.marginLeft = '10px';
-            ratingsText.style.verticalAlign = 'middle';
-            ratingsText.style.fontSize = '0.9em';
-
-            ratingsContainer.appendChild(starsContainer);
-            ratingsContainer.appendChild(ratingsText);
-            parentElement.appendChild(ratingsContainer);
-        }
-
-        // --- Render At-a-Glance Info (Consolidated) ---
         const siteInfoParts = [];
         if (searchResult.campsites_count) siteInfoParts.push(`<strong>${searchResult.campsites_count}</strong> sites`);
         if (searchResult.campsite_reserve_type?.length > 0) siteInfoParts.push(`(${searchResult.campsite_reserve_type.join(', ')})`);
@@ -3022,47 +2847,70 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
         const hasCellInfo = typeof searchResult.aggregate_cell_coverage === 'number';
         const hasPriceInfo = searchResult.price_range && typeof searchResult.price_range.amount_min === 'number';
 
-        if (hasSiteInfo || hasCellInfo || hasPriceInfo) {
-            const doc = parentElement.ownerDocument;
+        // Only create the container if there's something to show
+        if (hasRatings || hasSiteInfo || hasCellInfo || hasPriceInfo) {
             const glanceContainer = doc.createElement('div');
             glanceContainer.className = 'glance-info-section';
-            glanceContainer.style.marginBottom = '15px';
-            glanceContainer.style.fontSize = '1.1em';
-            glanceContainer.style.color = '#333';
-            glanceContainer.style.padding = '10px';
-            glanceContainer.style.backgroundColor = '#f8f9fa';
-            glanceContainer.style.border = '1px solid #dee2e6';
-            glanceContainer.style.borderRadius = '4px';
+
+            // --- Render User Ratings (now inside the glance container) ---
+            if (hasRatings) {
+                const ratingsContainer = doc.createElement('div');
+                ratingsContainer.className = 'ratings-section';
+
+                const averageRating = parseFloat(searchResult.average_rating).toFixed(1);
+                const numRatings = searchResult.number_of_ratings;
+
+                const starsContainer = doc.createElement('div');
+                starsContainer.className = 'stars';
+                const fullStars = Math.round(searchResult.average_rating);
+                for (let i = 0; i < 5; i++) {
+                    const star = doc.createElement('span');
+                    star.innerHTML = i < fullStars ? '&#9733;' : '&#9734;';
+                    star.style.color = '#f5b301';
+                    star.style.fontSize = '20px';
+                    starsContainer.appendChild(star);
+                }
+
+                const ratingsText = doc.createElement('span');
+                ratingsText.textContent = ` ${averageRating} out of 5 (${numRatings} ratings)`;
+                ratingsText.style.marginLeft = '10px';
+                ratingsText.style.verticalAlign = 'middle';
+                ratingsText.style.fontSize = '0.9em';
+
+                ratingsContainer.appendChild(starsContainer);
+                ratingsContainer.appendChild(ratingsText);
+                glanceContainer.appendChild(ratingsContainer);
+            }
+
+            // --- Render Other At-a-Glance Info ---
+            const createGlanceItem = (iconClass, text, iconColor = null) => {
+                const p = doc.createElement('p');
+                p.className = 'glance-item';
+
+                const icon = doc.createElement('span');
+                icon.className = `glance-icon ${iconClass}`;
+                if (iconColor) {
+                    icon.style.backgroundColor = iconColor;
+                }
+
+                const textSpan = doc.createElement('span');
+                textSpan.innerHTML = text;
+
+                p.appendChild(icon);
+                p.appendChild(textSpan);
+                return p;
+            };
 
             if (hasSiteInfo) {
-                const p = doc.createElement('p');
-                p.style.margin = '0';
-                p.innerHTML = siteInfoParts.join(' ');
-                glanceContainer.appendChild(p);
+                glanceContainer.appendChild(createGlanceItem('sites', siteInfoParts.join(' ')));
             }
 
             if (hasCellInfo) {
                 const coverage = searchResult.aggregate_cell_coverage;
                 const score = Math.round(coverage * 10);
                 const color = getCellScoreColor(score);
-                const wrapper = doc.createElement('div');
-                wrapper.style.display = 'flex';
-                wrapper.style.alignItems = 'center';
-                wrapper.style.margin = hasSiteInfo ? '8px 0 0 0' : '0';
-                const icon = doc.createElement('div');
-                icon.style.width = '1em';
-                icon.style.height = '1em';
-                icon.style.marginRight = '8px';
-                icon.style.backgroundColor = color;
-                icon.style.webkitMask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
-                icon.style.mask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
-                icon.style.webkitMaskSize = 'contain';
-                icon.style.maskSize = 'contain';
-                const textSpan = doc.createElement('span');
-                textSpan.innerHTML = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${coverage.toFixed(4)})`;
-                wrapper.appendChild(icon);
-                wrapper.appendChild(textSpan);
-                glanceContainer.appendChild(wrapper);
+                const cellText = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${coverage.toFixed(4)})`;
+                glanceContainer.appendChild(createGlanceItem('cell', cellText, color));
             }
 
             if (hasPriceInfo) {
@@ -3071,10 +2919,8 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
                     ? `$${amount_min.toFixed(2)}`
                     : `$${amount_min.toFixed(2)} - $${amount_max.toFixed(2)}`;
                 if (per_unit) priceText += ` per ${per_unit}`;
-
-                const p = addInfoElement(doc, glanceContainer, 'p', '');
-                p.style.margin = (hasSiteInfo || hasCellInfo) ? '8px 0 0 0' : '0';
-                p.innerHTML = `<strong>Price:</strong> ${priceText}`;
+                const priceLabel = `<strong>Price:</strong> ${priceText}`;
+                glanceContainer.appendChild(createGlanceItem('price', priceLabel));
             }
 
             parentElement.appendChild(glanceContainer);
@@ -3084,38 +2930,49 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
     // --- Display Key IDs ---
     const idsDiv = document.createElement('div');
     idsDiv.className = 'id-display-section';
-    idsDiv.style.padding = '10px';
-    idsDiv.style.margin = '10px 0';
-    idsDiv.style.backgroundColor = '#f0f0f0';
-    idsDiv.style.border = '1px solid #ddd';
+    const idList = document.createElement('ul');
+    idsDiv.appendChild(idList);
 
-    let campgroundIdText = `<strong>Recreation.gov Campground ID:</strong> ${ids.campgroundId || 'Not Found'}`;
-    if (facilityDetails && facilityDetails.FacilityName) {
-        const cleanName = facilityDetails.FacilityName.split('(')[0].trim();
-        campgroundIdText += ` (${cleanName})`;
+    // Helper to create a list item for the ID section
+    const addIdItem = (label, value) => {
+        if (!value) return; // Don't add an item if the value is missing
+
+        const li = document.createElement('li');
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'id-label';
+        labelSpan.textContent = label + ':';
+
+        const valueSpan = document.createElement('span');
+        valueSpan.className = 'id-value';
+        valueSpan.innerHTML = value; // Use innerHTML to support potential HTML in the value
+
+        li.appendChild(labelSpan);
+        li.appendChild(valueSpan);
+        idList.appendChild(li);
+    };
+
+    // Recreation.gov Campground
+    const campgroundName = facilityDetails?.FacilityName?.split('(')[0].trim() || 'Unknown Campground';
+    const campgroundId = ids.campgroundId || 'Not Found';
+    addIdItem('Recreation.gov Campground', `${campgroundName} (ID: ${campgroundId})`);
+
+    // Parent Rec Area
+    if (ids.recAreaId) {
+        const recAreaName = recAreaDetails?.RecAreaName || 'Unknown Rec Area';
+        addIdItem('Parent Rec Area', `${recAreaName} (ID: ${ids.recAreaId})`);
     }
-    addInfoElement(document, idsDiv, 'p', '').innerHTML = campgroundIdText;
 
-    let recAreaText = `<strong>Parent RecArea ID:</strong> ${ids.recAreaId || 'Not Found'}`;
-    if (recAreaDetails && recAreaDetails.RecAreaName) {
-        recAreaText += ` (${recAreaDetails.RecAreaName})`;
-    }
-    addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
-
-    if (facilityDetails && facilityDetails.OrgFacilityID) {
-        const orgFacilityIdText = `<strong>Organization Facility ID:</strong> ${facilityDetails.OrgFacilityID}`;
-        addInfoElement(document, idsDiv, 'p', '').innerHTML = orgFacilityIdText;
-    }
-
+    // Other IDs
     if (searchResult?.org_name && searchResult?.org_id) {
-        const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
-        addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
+        addIdItem('Managing Organization', `${searchResult.org_name} (ID: ${searchResult.org_id})`);
+    }
+    if (facilityDetails?.OrgFacilityID) {
+        addIdItem('Organization Facility ID', facilityDetails.OrgFacilityID);
+    }
+    if (searchResult?.state_code) {
+        addIdItem('State', searchResult.state_code);
     }
 
-    if (searchResult?.state_code) {
-        const stateText = `<strong>State:</strong> ${searchResult.state_code}`;
-        addInfoElement(document, idsDiv, 'p', '').innerHTML = stateText;
-    }
     parentElement.appendChild(idsDiv);
 
     // --- Add link to Recreation.gov for the campground ---
@@ -3735,12 +3592,10 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
 
         // Render the main header, facility details, and rec area details into their container.
         renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, searchResult, ids, campgroundMetadata);
-        const h1 = detailsContainer.querySelector('h1');
+        const titleBlock = detailsContainer.querySelector('.facility-title-block');
 
         // Insert the API status badge with the correct layout
-        if (h1) {
-            h1.style.marginBottom = '0.25em';
-
+        if (titleBlock) {
             const badgeContainer = document.createElement('div');
             badgeContainer.style.marginBottom = '1em';
 
@@ -3749,10 +3604,8 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
             badge.style.display = 'none';
             badgeContainer.appendChild(badge);
 
-            // Find the subheader to insert the badge after it. Fallback to h1.
-            const subheader = detailsContainer.querySelector('.facility-subheader');
-            const anchorElement = subheader || h1;
-            anchorElement.insertAdjacentElement('afterend', badgeContainer);
+            // Insert the badge container *after* the entire title block.
+            titleBlock.insertAdjacentElement('afterend', badgeContainer);
         }
 
         // Render primary image from search data, if available
@@ -3776,22 +3629,25 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         // Fallback if facilityDetails are not available, still provide a link and key IDs.
         const fallbackDiv = document.createElement('div');
         fallbackDiv.className = 'facility-details';
-        addInfoElement(document, fallbackDiv, 'h1', `Details for Campground ID: ${ids.campgroundId}`);
+
+        const titleBlock = document.createElement('div');
+        titleBlock.className = 'facility-title-block';
+        fallbackDiv.appendChild(titleBlock);
+
+        addInfoElement(document, titleBlock, 'h1', `Details for Campground ID: ${ids.campgroundId}`);
 
         // Also add City, State subheader in the fallback view if metadata is available
         if (campgroundMetadata?.city && campgroundMetadata?.state) {
             const locationText = `${campgroundMetadata.city}, ${campgroundMetadata.state}`;
-            const p = addInfoElement(document, fallbackDiv, 'p', locationText);
+            const p = addInfoElement(document, titleBlock, 'p', locationText);
             if (p) {
                 p.className = 'facility-subheader';
             }
         }
 
         // Insert the API status badge with the correct layout in the fallback view
-        const h1 = fallbackDiv.querySelector('h1');
-        if (h1) {
-            h1.style.marginBottom = '0.25em';
-
+        // The titleBlock is already defined in this scope.
+        if (titleBlock) {
             const badgeContainer = document.createElement('div');
             badgeContainer.style.marginBottom = '1em';
 
@@ -3800,37 +3656,48 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
             badge.style.display = 'none';
             badgeContainer.appendChild(badge);
 
-            // Find the subheader to insert the badge after it. Fallback to h1.
-            const subheader = fallbackDiv.querySelector('.facility-subheader');
-            const anchorElement = subheader || h1;
-            anchorElement.insertAdjacentElement('afterend', badgeContainer);
+            // Insert the badge container *after* the entire title block.
+            titleBlock.insertAdjacentElement('afterend', badgeContainer);
         }
 
         const idsDiv = document.createElement('div');
         idsDiv.className = 'id-display-section';
-        idsDiv.style.padding = '10px';
-        idsDiv.style.margin = '10px 0';
-        idsDiv.style.backgroundColor = '#f0f0f0';
-        idsDiv.style.border = '1px solid #ddd';
-        let campgroundIdText = `<strong>Recreation.gov Campground ID:</strong> ${ids.campgroundId || 'Not Found'}`;
-        // In the fallback, we don't have facilityDetails, but we might have campgroundMetadata
-        if (campgroundMetadata && campgroundMetadata.facility_name) {
-            const cleanName = campgroundMetadata.facility_name.split('(')[0].trim();
-            campgroundIdText += ` (${cleanName})`;
-        }
-        addInfoElement(document, idsDiv, 'p', '').innerHTML = campgroundIdText;
+        const idList = document.createElement('ul');
+        idsDiv.appendChild(idList);
 
-        let recAreaText = `<strong>Parent RecArea ID:</strong> ${ids.recAreaId || 'Not Found'}`;
-        if (recAreaDetails && recAreaDetails.RecAreaName) {
-            recAreaText += ` (${recAreaDetails.RecAreaName})`;
+        // Helper to create a list item for the ID section
+        const addIdItem = (label, value) => {
+            if (!value) return;
+            const li = document.createElement('li');
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'id-label';
+            labelSpan.textContent = label + ':';
+            const valueSpan = document.createElement('span');
+            valueSpan.className = 'id-value';
+            valueSpan.innerHTML = value;
+            li.appendChild(labelSpan);
+            li.appendChild(valueSpan);
+            idList.appendChild(li);
+        };
+
+        // Recreate the same ID list as in the main function for consistency
+        const campgroundName = campgroundMetadata?.facility_name?.split('(')[0].trim() || 'Unknown Campground';
+        const campgroundId = ids.campgroundId || 'Not Found';
+        addIdItem('Recreation.gov Campground', `${campgroundName} (ID: ${campgroundId})`);
+
+        if (ids.recAreaId) {
+            const recAreaName = recAreaDetails?.RecAreaName || 'Unknown Rec Area';
+            addIdItem('Parent Rec Area', `${recAreaName} (ID: ${ids.recAreaId})`);
         }
-        addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
 
         if (searchResult?.org_name && searchResult?.org_id) {
-            const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
-            addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
+            addIdItem('Managing Organization', `${searchResult.org_name} (ID: ${searchResult.org_id})`);
         }
-
+        // Note: facilityDetails is null in this block, so OrgFacilityID won't be available.
+        if (searchResult?.state_code) {
+            addIdItem('State', searchResult.state_code);
+        }
+        
         fallbackDiv.appendChild(idsDiv);
 
         const recGovLink = addInfoElement(document, fallbackDiv, 'p', '');

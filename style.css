@@ -345,6 +345,22 @@ td:nth-child(6) {
     border: 1px solid #ddd;
 }
 
+/* --- New styles for the prominent header block --- */
+.facility-title-block {
+    background-color: #003403; /* Dark slate gray, matches main page title */
+    padding: 20px;
+    /* Use negative margins to break out of the parent's padding and fill the width */
+    margin: -15px -15px 15px -15px;
+    border-radius: 5px 5px 0 0; /* Match the parent container's top corners */
+}
+
+/* Override text color for elements inside the new dark header */
+/* The h1 selector needs to be more specific to override the rule below */
+.facility-details .facility-title-block h1,
+.facility-title-block .facility-subheader {
+    color: white;
+}
+
 .facility-details h1 {
     margin-top: 0;
     font-size: 1.8em;
@@ -363,6 +379,100 @@ td:nth-child(6) {
     font-size: 0.9em;
     line-height: 1.6;
     color: #555;
+}
+
+/* --- Styles for the unified At-a-Glance Section --- */
+.glance-info-section {
+    margin-bottom: 15px;
+    font-size: 1.1em;
+    color: #333;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+}
+
+.glance-info-section .ratings-section {
+    display: flex;
+    align-items: center;
+    margin-bottom: 3px; /* Unify spacing with other glance items */
+}
+
+.glance-item {
+    display: flex;
+    align-items: center;
+    /* Reset default paragraph margins and set a consistent bottom margin */
+    margin: 0 0 3px 0;
+}
+
+.glance-item:last-child {
+    margin-bottom: 0;
+}
+
+.glance-icon {
+    width: 1.1em;
+    height: 1.1em;
+    margin-right: 10px;
+    flex-shrink: 0;
+    background-color: #555; /* Default icon color */
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+}
+
+.glance-icon.sites {
+    -webkit-mask-image: url('media/campground-solid-full.svg');
+    mask-image: url('media/campground-solid-full.svg');
+    background-color: #28a745; /* Green, to match 'good' cell score */
+}
+
+.glance-icon.price {
+    -webkit-mask-image: url('media/dollar-sign-solid-full.svg');
+    mask-image: url('media/dollar-sign-solid-full.svg');
+    background-color: #28a745; /* Green, to match 'good' cell score */
+}
+.glance-icon.cell {
+    -webkit-mask-image: url('media/tower-cell-solid-full.svg');
+    mask-image: url('media/tower-cell-solid-full.svg');
+}
+
+.id-display-section {
+    /* These styles unify the look with the .glance-info-section */
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+    margin: 10px 0;
+}
+
+.id-display-section ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.id-display-section li {
+    display: flex;
+    align-items: flex-start;
+    padding: 3px 0; /* Reduced padding to consolidate lines */
+    font-size: 0.9em;
+}
+
+.id-display-section .id-label {
+    font-weight: bold;
+    color: #333;
+    flex-basis: 250px; /* Increased width for the label column */
+    flex-shrink: 0;    /* Prevent the label from shrinking */
+    padding-right: 10px;
+}
+
+.id-display-section .id-value {
+    flex-grow: 1;
+    color: #555;
+    word-break: break-word; /* Break long IDs if needed */
 }
 .checkbox-grid {
     display: grid;
