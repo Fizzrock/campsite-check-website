@@ -2907,9 +2907,10 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
 
             if (hasCellInfo) {
                 const coverage = searchResult.aggregate_cell_coverage;
-                const score = Math.round(coverage * 10);
-                const color = getCellScoreColor(score);
-                const cellText = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${coverage.toFixed(4)})`;
+                const calculatedScore = Math.round(coverage * 10);
+                const displayScore = Math.min(10, calculatedScore); // Clamp the score at 10 for display
+                const color = getCellScoreColor(calculatedScore); // Color is based on the real, unclamped score
+                const cellText = `<strong>Cell Coverage Score:</strong> ${displayScore} / 10 (raw: ${coverage.toFixed(4)})`;
                 glanceContainer.appendChild(createGlanceItem('cell', cellText, color));
             }
 

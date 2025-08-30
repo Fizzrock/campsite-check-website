@@ -908,4 +908,23 @@ button[data-campsite-id]:hover {
         margin-left: 0;
         margin-right: 0;
     }
+
+    .id-display-section li {
+        flex-direction: column; /* Stack label and value vertically */
+        align-items: flex-start;
+        padding: 8px 0; /* Give more vertical space when stacked */
+    }
+
+    .id-display-section .id-label {
+        flex-basis: auto; /* Reset the fixed width */
+        padding-right: 0;
+        margin-bottom: 2px; /* Add a small gap between label and value */
+    }
+
+    .glance-info-section,
+    .id-display-section,
+    .notices-section {
+        /* Make text in these info blocks smaller on mobile for better fit */
+        font-size: 0.95em;
+    }
 }
