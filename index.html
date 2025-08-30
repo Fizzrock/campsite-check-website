@@ -48,7 +48,7 @@
             <div class="instructions" style="margin-top: 1em; padding-bottom: 1em;">
                 <p><strong>How to use:</strong></p>
                 <ol>
-                    <li>Select a saved location from the <strong>Load Preset</strong> dropdown, or manually enter a <strong>Campground ID</strong>.</li>
+                    <li>Use the <strong>Find Campground by Name</strong> tool above, select a saved location from the <strong>Load Preset</strong> dropdown, or manually enter a <strong>Campground ID</strong>.</li>
                     <li>Adjust the date range and other options as needed.</li>
                     <li>Click <strong>Run Availability Check</strong> to see the results below.</li>
                 </ol>
@@ -84,23 +84,26 @@
                     <legend>Output & Display Options</legend>
                     
                     <div class="checkbox-grid">
-                        <!-- General Display -->
+                      <!-- General Display & Tab Content -->
                         <label><input type="checkbox" id="sortBySiteFirst" name="sortBySiteFirst"> Sort by Site first (default is by Date)</label>
                         <label><input type="checkbox" name="showCampsiteIdColumn" id="showCampsiteIdColumn"> Show Campsite ID Column</label>
-                        
-                        <!-- Tab Content -->
                         <label><input type="checkbox" id="includeNotReservableInAvailableTab" name="includeNotReservableInAvailableTab"> Exclude 'Walk-up' sites</label>
                         <label><input type="checkbox" id="showAllFilteredSitesStatuses" name="showAllFilteredSitesStatuses"> Show All Reservation Statuses</label>
                         <label><input type="checkbox" id="fetchDetailsForAvailableOnly" name="fetchDetailsForAvailableOnly"> Show Details for 'Available' only</label>
-                    </div>
+  
+                        <hr class="options-separator" style="grid-column: 1 / -1; margin: 0.5em 0;">
 
-                    <hr class="options-separator">
+                      <!-- Raw Data Tabs -->
+                        <label><input type="checkbox" id="toggleAllRawDataTabs"> <strong>Show All Raw Data Tabs</strong></label>
+                        <label><input type="checkbox" name="showRawJsonTab" class="raw-data-checkbox"> Show Raw Campsites Tab</label>
+                        <label><input type="checkbox" name="showFullMetadataTab" class="raw-data-checkbox"> Show Raw Metadata Tab</label>
+                        <label><input type="checkbox" name="showRecGovSearchDataTab" class="raw-data-checkbox"> Show Raw Rec.gov Search Tab</label>
+                        <label><input type="checkbox" id="showFacilityDetailsTab" name="showFacilityDetailsTab" class="raw-data-checkbox"> Show Raw Facility Details Tab</label>
+                        <label><input type="checkbox" id="showRecAreaDetailsTab" name="showRecAreaDetailsTab" class="raw-data-checkbox"> Show Raw Rec Area Details Tab</label>
+                        <label><input type="checkbox" id="showRecAreaEventsTab" name="showRecAreaEventsTab" class="raw-data-checkbox"> Show Raw Rec Area Events Tab</label>
+                        <label><input type="checkbox" id="showRecAreaMediaTab" name="showRecAreaMediaTab" class="raw-data-checkbox"> Show Raw Rec Area Media Tab</label>
 
-                    <div class="checkbox-grid">
-                        <!-- Debugging & Raw Data Tabs -->
-                        <label><input type="checkbox" name="showRawJsonTab"> Show Raw Campsites Tab</label>
-                        <label><input type="checkbox" name="showFullMetadataTab"> Show Raw Metadata Tab</label>
-                        <label><input type="checkbox" name="showRecGovSearchDataTab"> Show Raw Rec.gov Search Tab</label>
+                        <!-- Debugging -->
                         <label><input type="checkbox" name="showDebugTab"> Show Debug Tab</label>
                         <label><input type="checkbox" id="openDebugTabInNewWindow" name="openDebugTabInNewWindow"> Open Debug in New Window</label>
                     </div>

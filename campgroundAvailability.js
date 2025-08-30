@@ -277,6 +277,10 @@ const config = {
         showCampsitesObjectTab: false, // For debugging, not yet implemented
         showRecGovSearchDataTab: false, // If true, opens a new tab with the raw JSON from the Rec.gov search API.
         showDebugTab: false, // If true, opens a final tab with the entire `debugInfo` object for inspection.
+        showFacilityDetailsTab: false, // If true, opens a new tab with the raw JSON from the RIDB Facility Details API.
+        showRecAreaDetailsTab: false, // If true, opens a new tab with the raw JSON from the RIDB Rec Area Details API.
+        showRecAreaEventsTab: false, // If true, opens a new tab with the raw JSON from the RIDB Rec Area Events API.
+        showRecAreaMediaTab: false, // If true, opens a new tab with the raw JSON from the RIDB Rec Area Media API.
 
         // Column Toggles
         showCampsiteIdColumn: false // If true, shows the 'Campsite ID' column in data tables.
@@ -1300,6 +1304,26 @@ async function renderAllOutputs(allData, config) {
     console.log('[renderAllOutputs] Checking if showRecGovSearchDataTab is enabled:', config.display.showRecGovSearchDataTab);
     if (config.display.showRecGovSearchDataTab && recGovSearchData) {
         displayDataInNewTab(recGovSearchData, `Rec.gov Search Data`);
+    }
+    console.log('[renderAllOutputs] Checking if showFacilityDetailsTab is enabled:', config.display.showFacilityDetailsTab);
+    if (config.display.showFacilityDetailsTab) {
+        const dataToShow = facilityDetails || { message: "No Facility Details data was fetched or available." };
+        displayDataInNewTab(dataToShow, `Raw Facility Details`);
+    }
+    console.log('[renderAllOutputs] Checking if showRecAreaDetailsTab is enabled:', config.display.showRecAreaDetailsTab);
+    if (config.display.showRecAreaDetailsTab) {
+        const dataToShow = recAreaDetails || { message: "No Recreation Area Details data was fetched or available." };
+        displayDataInNewTab(dataToShow, `Raw Rec Area Details`);
+    }
+    console.log('[renderAllOutputs] Checking if showRecAreaEventsTab is enabled:', config.display.showRecAreaEventsTab);
+    if (config.display.showRecAreaEventsTab) {
+        const dataToShow = eventsData || { message: "No Recreation Area Events data was fetched or available." };
+        displayDataInNewTab(dataToShow, `Raw Rec Area Events`);
+    }
+    console.log('[renderAllOutputs] Checking if showRecAreaMediaTab is enabled:', config.display.showRecAreaMediaTab);
+    if (config.display.showRecAreaMediaTab) {
+        const dataToShow = recAreaMedia || { message: "No Recreation Area Media data was fetched or available." };
+        displayDataInNewTab(dataToShow, `Raw Rec Area Media`);
     }
 
     // For diagnostics, always render the debug tab last.
@@ -4177,6 +4201,13 @@ function handlePresetChange(event) {
         siteFilters: { siteNumbersToFilter: selectedPreset.sites }
     };
     populateFormFromConfig(presetConfig);
+
+    // Manually hide the "Selected: ..." text, as loading a preset
+    // programmatically changes the input value without firing an 'input' event.
+    const campgroundNameDisplay = document.getElementById('campground-name-display');
+    if (campgroundNameDisplay) {
+        campgroundNameDisplay.style.display = 'none';
+    }
 }
 
 /**
@@ -4229,6 +4260,53 @@ function handleCopyLink() {
         copyButton.textContent = 'Copied!';
         setTimeout(() => { copyButton.textContent = originalText; }, 2000);
     }).catch(err => console.error('Failed to copy link: ', err));
+}
+
+/**
+ * Initializes the "Select All" checkbox functionality for the raw data tabs.
+ * It syncs the state between the master toggle and the individual checkboxes.
+ */
+function initializeRawDataToggle() {
+    const masterToggle = document.getElementById('toggleAllRawDataTabs');
+    const rawDataCheckboxes = document.querySelectorAll('.raw-data-checkbox');
+
+    if (!masterToggle || rawDataCheckboxes.length === 0) {
+        console.warn('Master toggle for raw data tabs not found. Feature will be disabled.');
+        return;
+    }
+
+    // Function to update the master toggle's state based on children
+    function updateMasterToggleState() {
+        const totalCheckboxes = rawDataCheckboxes.length;
+        const checkedCount = document.querySelectorAll('.raw-data-checkbox:checked').length;
+
+        if (checkedCount === 0) {
+            masterToggle.checked = false;
+            masterToggle.indeterminate = false;
+        } else if (checkedCount === totalCheckboxes) {
+            masterToggle.checked = true;
+            masterToggle.indeterminate = false;
+        } else {
+            // When some, but not all, are checked
+            masterToggle.checked = false;
+            masterToggle.indeterminate = true;
+        }
+    }
+
+    // Event listener for the master toggle to control all children
+    masterToggle.addEventListener('change', () => {
+        rawDataCheckboxes.forEach(checkbox => {
+            checkbox.checked = masterToggle.checked;
+        });
+    });
+
+    // Event listeners for each child to update the master's state
+    rawDataCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateMasterToggleState);
+    });
+
+    // Set the initial state of the master toggle when the page loads
+    updateMasterToggleState();
 }
 
 /**
@@ -4426,6 +4504,9 @@ async function initializePage() {
 
     // Initialize the "Back to Top" button functionality
     initializeBackToTopButton();
+    
+    // Initialize the "Select All" checkbox for raw data tabs
+    initializeRawDataToggle();
     
     console.log("Page initialized. Ready for user input.");
 }
