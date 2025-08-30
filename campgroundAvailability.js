@@ -2991,8 +2991,17 @@ function startCooldown(button) {
  * @param {object|null} recAreaDetails The detailed data for the parent recreation area.
  * @param {IdCollection} ids The collection of IDs for the campground.
  */
-function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaDetails, searchResult, ids) {
+function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaDetails, searchResult, ids, campgroundMetadata) {
     addInfoElement(document, parentElement, 'h1', facilityDetails.FacilityName || `Details for Campground ID: ${ids.campgroundId}`);
+
+    // Add City, State subheader right below the main title
+    if (campgroundMetadata?.city && campgroundMetadata?.state) {
+        const locationText = `${campgroundMetadata.city}, ${campgroundMetadata.state}`;
+        const p = addInfoElement(document, parentElement, 'p', locationText);
+        if (p) {
+            p.className = 'facility-subheader';
+        }
+    }
 
     if (searchResult) {
         renderUserRatings(parentElement, searchResult);
@@ -3020,9 +3029,19 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
     }
     addInfoElement(document, idsDiv, 'p', '').innerHTML = recAreaText;
 
+    if (facilityDetails && facilityDetails.OrgFacilityID) {
+        const orgFacilityIdText = `<strong>Organization Facility ID:</strong> ${facilityDetails.OrgFacilityID}`;
+        addInfoElement(document, idsDiv, 'p', '').innerHTML = orgFacilityIdText;
+    }
+
     if (searchResult?.org_name && searchResult?.org_id) {
         const orgText = `<strong>Managing Organization:</strong> ${searchResult.org_name} (ID: ${searchResult.org_id})`;
         addInfoElement(document, idsDiv, 'p', '').innerHTML = orgText;
+    }
+
+    if (searchResult?.state_code) {
+        const stateText = `<strong>State:</strong> ${searchResult.state_code}`;
+        addInfoElement(document, idsDiv, 'p', '').innerHTML = stateText;
     }
     parentElement.appendChild(idsDiv);
 
@@ -3050,6 +3069,11 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
     addDetail("Phone", facilityDetails.FacilityPhone);
     if (facilityDetails.FacilityEmail) addDetail("Email", `<a href="mailto:${facilityDetails.FacilityEmail}">${facilityDetails.FacilityEmail}</a>`, true);
     addDetail("Accessibility", facilityDetails.FacilityAccessibilityText);
+
+    // Add ADA Access information, translating 'Y'/'N' to a user-friendly format.
+    if (facilityDetails.FacilityAdaAccess) {
+        addDetail("ADA Accessible", facilityDetails.FacilityAdaAccess === 'Y' ? 'Yes' : 'No');
+    }
 
     let facilityLat, facilityLon;
     if (facilityDetails.FacilityLatitude && facilityDetails.FacilityLongitude) {
@@ -3637,7 +3661,7 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         containerElement.appendChild(detailsContainer);
 
         // Render the main header, facility details, and rec area details into their container.
-        renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, searchResult, ids);
+        renderFacilityHeaderAndDetails(detailsContainer, facilityDetails, recAreaDetails, searchResult, ids, campgroundMetadata);
         const h1 = detailsContainer.querySelector('h1');
 
         // Insert the API status badge with the correct layout
@@ -3677,6 +3701,15 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
         const fallbackDiv = document.createElement('div');
         fallbackDiv.className = 'facility-details';
         addInfoElement(document, fallbackDiv, 'h1', `Details for Campground ID: ${ids.campgroundId}`);
+
+        // Also add City, State subheader in the fallback view if metadata is available
+        if (campgroundMetadata?.city && campgroundMetadata?.state) {
+            const locationText = `${campgroundMetadata.city}, ${campgroundMetadata.state}`;
+            const p = addInfoElement(document, fallbackDiv, 'p', locationText);
+            if (p) {
+                p.className = 'facility-subheader';
+            }
+        }
 
         // Insert the API status badge with the correct layout in the fallback view
         const h1 = fallbackDiv.querySelector('h1');
