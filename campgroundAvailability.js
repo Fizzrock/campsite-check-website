@@ -161,32 +161,6 @@ const preset_blank = {
     sites: []
 };
 
-const preset_TuolumneMeadows = {
-    campgroundId: "232448",
-    sites: ['A040', 'A042', 'A044', 'A043', 'A038', 'A037', 'A034', 'A035', 'A033', 'A032', 'A028', 'A022', 'A020']
-    // best sites Tuolumne Meadows = A035, 
-};
-
-const preset_RockCreek_Patti = {
-    campgroundId: "233907",
-    sites: [20, 21, 22, 23, 24] // Patti's favorites
-};
-
-const preset_RockCreek_All = {
-    campgroundId: "233907",
-    sites: [1, 12, 20, 21, 22, 23, 24, 25, 26]
-};
-
-const preset_YosemiteCreek = {
-    campgroundId: "10083840",
-    sites: [51, 54, 55, 58, 60, 61]
-};
-
-const preset_UpperPines = {
-    campgroundId: "232447",
-    sites: [] // No specific sites, will show all
-};
-
 // This will be populated by fetching presets.json on page load.
 let PRESET_COLLECTION = {};
 
@@ -3004,8 +2978,107 @@ function renderFacilityHeaderAndDetails(parentElement, facilityDetails, recAreaD
     }
 
     if (searchResult) {
-        renderUserRatings(parentElement, searchResult);
-        renderAtAGlanceInfo(parentElement, searchResult);
+        // --- Render User Ratings (Consolidated) ---
+        if (typeof searchResult.average_rating === 'number' && typeof searchResult.number_of_ratings === 'number') {
+            const doc = parentElement.ownerDocument;
+            const ratingsContainer = doc.createElement('div');
+            ratingsContainer.className = 'ratings-section';
+            ratingsContainer.style.display = 'flex';
+            ratingsContainer.style.alignItems = 'center';
+            ratingsContainer.style.marginBottom = '10px';
+
+            const averageRating = parseFloat(searchResult.average_rating).toFixed(1);
+            const numRatings = searchResult.number_of_ratings;
+
+            const starsContainer = doc.createElement('div');
+            starsContainer.className = 'stars';
+            const fullStars = Math.round(searchResult.average_rating);
+            for (let i = 0; i < 5; i++) {
+                const star = doc.createElement('span');
+                star.innerHTML = i < fullStars ? '&#9733;' : '&#9734;';
+                star.style.color = '#f5b301';
+                star.style.fontSize = '20px';
+                starsContainer.appendChild(star);
+            }
+
+            const ratingsText = doc.createElement('span');
+            ratingsText.textContent = ` ${averageRating} out of 5 (${numRatings} ratings)`;
+            ratingsText.style.marginLeft = '10px';
+            ratingsText.style.verticalAlign = 'middle';
+            ratingsText.style.fontSize = '0.9em';
+
+            ratingsContainer.appendChild(starsContainer);
+            ratingsContainer.appendChild(ratingsText);
+            parentElement.appendChild(ratingsContainer);
+        }
+
+        // --- Render At-a-Glance Info (Consolidated) ---
+        const siteInfoParts = [];
+        if (searchResult.campsites_count) siteInfoParts.push(`<strong>${searchResult.campsites_count}</strong> sites`);
+        if (searchResult.campsite_reserve_type?.length > 0) siteInfoParts.push(`(${searchResult.campsite_reserve_type.join(', ')})`);
+        if (searchResult.campsite_equipment_name?.length > 0) siteInfoParts.push(`for ${searchResult.campsite_equipment_name.join(', ')}`);
+
+        const hasSiteInfo = siteInfoParts.length > 0;
+        const hasCellInfo = typeof searchResult.aggregate_cell_coverage === 'number';
+        const hasPriceInfo = searchResult.price_range && typeof searchResult.price_range.amount_min === 'number';
+
+        if (hasSiteInfo || hasCellInfo || hasPriceInfo) {
+            const doc = parentElement.ownerDocument;
+            const glanceContainer = doc.createElement('div');
+            glanceContainer.className = 'glance-info-section';
+            glanceContainer.style.marginBottom = '15px';
+            glanceContainer.style.fontSize = '1.1em';
+            glanceContainer.style.color = '#333';
+            glanceContainer.style.padding = '10px';
+            glanceContainer.style.backgroundColor = '#f8f9fa';
+            glanceContainer.style.border = '1px solid #dee2e6';
+            glanceContainer.style.borderRadius = '4px';
+
+            if (hasSiteInfo) {
+                const p = doc.createElement('p');
+                p.style.margin = '0';
+                p.innerHTML = siteInfoParts.join(' ');
+                glanceContainer.appendChild(p);
+            }
+
+            if (hasCellInfo) {
+                const coverage = searchResult.aggregate_cell_coverage;
+                const score = Math.round(coverage * 10);
+                const color = getCellScoreColor(score);
+                const wrapper = doc.createElement('div');
+                wrapper.style.display = 'flex';
+                wrapper.style.alignItems = 'center';
+                wrapper.style.margin = hasSiteInfo ? '8px 0 0 0' : '0';
+                const icon = doc.createElement('div');
+                icon.style.width = '1em';
+                icon.style.height = '1em';
+                icon.style.marginRight = '8px';
+                icon.style.backgroundColor = color;
+                icon.style.webkitMask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
+                icon.style.mask = 'url(media/tower-cell-solid-full.svg) no-repeat center';
+                icon.style.webkitMaskSize = 'contain';
+                icon.style.maskSize = 'contain';
+                const textSpan = doc.createElement('span');
+                textSpan.innerHTML = `<strong>Cell Coverage Score:</strong> ${score} / 10 (raw: ${coverage.toFixed(4)})`;
+                wrapper.appendChild(icon);
+                wrapper.appendChild(textSpan);
+                glanceContainer.appendChild(wrapper);
+            }
+
+            if (hasPriceInfo) {
+                const { amount_min, amount_max, per_unit } = searchResult.price_range;
+                let priceText = (amount_min === amount_max)
+                    ? `$${amount_min.toFixed(2)}`
+                    : `$${amount_min.toFixed(2)} - $${amount_max.toFixed(2)}`;
+                if (per_unit) priceText += ` per ${per_unit}`;
+
+                const p = addInfoElement(doc, glanceContainer, 'p', '');
+                p.style.margin = (hasSiteInfo || hasCellInfo) ? '8px 0 0 0' : '0';
+                p.innerHTML = `<strong>Price:</strong> ${priceText}`;
+            }
+
+            parentElement.appendChild(glanceContainer);
+        }
     }
 
     // --- Display Key IDs ---
@@ -3676,7 +3749,10 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
             badge.style.display = 'none';
             badgeContainer.appendChild(badge);
 
-            h1.insertAdjacentElement('afterend', badgeContainer);
+            // Find the subheader to insert the badge after it. Fallback to h1.
+            const subheader = detailsContainer.querySelector('.facility-subheader');
+            const anchorElement = subheader || h1;
+            anchorElement.insertAdjacentElement('afterend', badgeContainer);
         }
 
         // Render primary image from search data, if available
@@ -3724,7 +3800,10 @@ function renderMainPage(containerElement, campgroundMetadata, facilityDetails, r
             badge.style.display = 'none';
             badgeContainer.appendChild(badge);
 
-            h1.insertAdjacentElement('afterend', badgeContainer);
+            // Find the subheader to insert the badge after it. Fallback to h1.
+            const subheader = fallbackDiv.querySelector('.facility-subheader');
+            const anchorElement = subheader || h1;
+            anchorElement.insertAdjacentElement('afterend', badgeContainer);
         }
 
         const idsDiv = document.createElement('div');

@@ -352,8 +352,9 @@ td:nth-child(6) {
 }
 
 .facility-subheader {
-    font-size: 1.2rem;
-    color: #6c757d; /* Muted gray for sub-header */
+    font-size: 1.4rem; /* Larger sub-header text */
+    font-weight: bold;
+    color: #495057; /* A slightly darker gray for better readability */
     margin-top: -0.5em;
     margin-bottom: 1em;
 }
